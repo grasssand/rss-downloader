@@ -1,0 +1,32 @@
+log:
+  level: info
+web:
+  enabled: true
+  host: 127.0.0.1
+  port: 8000
+  interval_hours: 6
+aria2:
+  rpc: http://localhost:6800/jsonrpc
+  secret: your_secret
+  dir: null
+qbittorrent:
+  host: http://localhost:8080
+  username: admin
+  password: password
+feeds:
+- name: Mikan
+  url: https://mikanime.tv/RSS/MyBangumi
+  include:
+  - chs
+  - gb
+  - 简体
+  - 简繁
+  - 简日
+  exclude:
+  - 720p
+  - X720
+  - 合集
+  - 补档
+  - 内嵌
+  - \d{2,}\s*[-|~]\s*\d{2,}
+  downloader: aria2
