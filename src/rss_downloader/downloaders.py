@@ -2,8 +2,21 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
+from pydantic import BaseModel, HttpUrl
 
 from .logger import logger
+
+
+# 测试下载器连接性
+class Aria2TestPayload(BaseModel):
+    rpc: HttpUrl | None
+    secret: str | None = None
+
+
+class QBittorrentTestPayload(BaseModel):
+    host: HttpUrl | None
+    username: str | None = None
+    password: str | None = None
 
 
 class Aria2Client:
@@ -52,6 +65,17 @@ class Aria2Client:
         except Exception as e:
             logger.exception(f"Aria2 发生未知错误: {e}")
             return {"error": str(e)}
+
+    def get_version(self) -> dict[str, Any]:
+        """获取 Aria2 版本信息以测试连接"""
+        try:
+            data = self._prepare_request("aria2.getVersion")
+            response = requests.post(self.rpc_url, json=data, timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"获取 Aria2 版本失败: {e}")
+            return {"error": {"message": str(e)}}
 
 
 class QBittorrentClient:
@@ -111,3 +135,14 @@ class QBittorrentClient:
         except Exception as e:
             logger.exception(f"qBittorrent 添加任务时发生未知错误: {e}")
             return False
+
+    def get_version(self) -> dict[str, str]:
+        """获取 qBittorrent 版本信息以测试连接"""
+        try:
+            version_url = urljoin(self.base_url, "/api/v2/app/version")
+            response = self.session.get(version_url, timeout=5)
+            response.raise_for_status()
+            return {"version": response.text}
+        except Exception as e:
+            logger.error(f"获取 qBittorrent 版本失败: {e}")
+            return {"error": str(e)}

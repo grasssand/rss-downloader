@@ -147,6 +147,4 @@ class RSSDownloader:
             logger.info(f"处理完成，共添加 {total_items} 个下载任务")
 
 
-if __name__ == "__main__":
-    rss_downloader = RSSDownloader()
-    rss_downloader.run()
+rss_downloader = RSSDownloader()

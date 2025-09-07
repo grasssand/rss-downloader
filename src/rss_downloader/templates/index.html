@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}下载记录{% endblock %}
+{% block nav_home %}bg-zinc-100 font-semibold text-zinc-900{% endblock %}
+{% block header %}下载记录{% endblock %}
+
+{% block content %}
+<form method="get" class="mb-6 p-4 bg-white border border-zinc-200 rounded-lg shadow-sm">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <input type="text" name="title" placeholder="标题关键词" value="{{ query.title or '' }}"
+               class="px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
+        <input type="text" name="feed_name" placeholder="RSS源" value="{{ query.feed_name or '' }}"
+               class="px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
+        <select name="downloader" class="px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
+            <option value="">全部下载器</option>
+            <option value="aria2" {% if query.downloader == 'aria2' %}selected{% endif %}>Aria2</option>
+            <option value="qbittorrent" {% if query.downloader == 'qbittorrent' %}selected{% endif %}>qBittorrent</option>
+        </select>
+        <div class="flex space-x-2">
+            <select name="status" class="w-1/2 px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                <option value="">全部状态</option>
+                <option value="1" {% if query.status|string == '1' %}selected{% endif %}>成功</option>
+                <option value="0" {% if query.status|string == '0' %}selected{% endif %}>失败</option>
+            </select>
+            <select name="mode" class="w-1/2 px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
+                <option value="">全部模式</option>
+                <option value="0" {% if query.mode|string == '0' %}selected{% endif %}>自动</option>
+                <option value="1" {% if query.mode|string == '1' %}selected{% endif %}>手动</option>
+            </select>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <label for="published_start_time" class="text-sm text-gray-600 whitespace-nowrap">发布于</label>
+            <input type="date" name="published_start_time" id="published_start_time" value="{{ query.published_start_time.strftime('%Y-%m-%d') if query.published_start_time else '' }}" class="px-3 py-2 border border-zinc-200 rounded-md w-full">
+        </div>
+        <div class="flex items-center space-x-2">
+            <label for="published_end_time" class="text-sm text-gray-600 whitespace-nowrap">至</label>
+            <input type="date" name="published_end_time" id="published_end_time" value="{{ query.published_end_time.strftime('%Y-%m-%d') if query.published_end_time else '' }}" class="px-3 py-2 border border-zinc-200 rounded-md w-full">
+        </div>
+        <div class="flex items-center space-x-2">
+            <label for="download_start_time" class="text-sm text-gray-600 whitespace-nowrap">下载于</label>
+            <input type="date" name="download_start_time" id="download_start_time" value="{{ query.download_start_time.strftime('%Y-%m-%d') if query.download_start_time else '' }}" class="px-3 py-2 border border-zinc-200 rounded-md w-full">
+        </div>
+        <div class="flex items-center space-x-2">
+             <label for="download_end_time" class="text-sm text-gray-600 whitespace-nowrap">至</label>
+            <input type="date" name="download_end_time" id="download_end_time" value="{{ query.download_end_time.strftime('%Y-%m-%d') if query.download_end_time else '' }}" class="px-3 py-2 border border-zinc-200 rounded-md w-full">
+        </div>
+    </div>
+    <div class="mt-4 flex justify-end space-x-3">
+        <a href="/" class="px-4 py-2 bg-zinc-200 text-zinc-800 rounded-md hover:bg-zinc-300">清空查询</a>
+        <button type="submit" class="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <span>查询</span>
+        </button>
+    </div>
+</form>
+
+<div class="overflow-x-auto bg-white border border-zinc-200 rounded-lg shadow-sm">
+    <table class="min-w-full text-sm">
+        <thead class="bg-zinc-50">
+            <tr class="text-left text-zinc-600">
+                <th class="px-3 py-2 border-b border-zinc-200 w-12 text-center">#</th>
+                <th class="px-3 py-2 border-b border-zinc-200 min-w-[22rem]">标题</th>
+                <th class="px-3 py-2 border-b border-zinc-200">RSS源</th>
+                <th class="px-3 py-2 border-b border-zinc-200 min-w-[10rem]">发布时间</th>
+                <th class="px-3 py-2 border-b border-zinc-200 w-24 text-center">下载器</th>
+                <th class="px-3 py-2 border-b border-zinc-200 w-20 text-center">模式</th>
+                <th class="px-3 py-2 border-b border-zinc-200 w-20 text-center">状态</th>
+                <th class="px-3 py-2 border-b border-zinc-200 min-w-[10rem]">下载时间</th>
+                <th class="px-3 py-2 border-b border-zinc-200 text-center min-w-[15rem]">操作</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-200">
+            {% for dl in downloads %}
+            <tr class="hover:bg-zinc-50">
+                <td class="px-3 py-2 text-center text-gray-500 align-middle">{{ loop.index + offset }}</td>
+                <td class="px-3 py-2 align-middle">
+                    <a href="{{ dl.url }}" class="text-blue-600 hover:underline" target="_blank" title="{{ dl.title }}">{{ dl.title | truncate(120) }}</a>
+                </td>
+                <td class="px-3 py-2 align-middle">
+                    <a href="{{ dl.feed_url }}" class="text-blue-600 hover:underline" target="_blank">{{ dl.feed_name or '未知' }}</a>
+                </td>
+                <td class="px-3 py-2 whitespace-nowrap align-middle">{{ dl.published_time | strftime }}</td>
+                <td class="px-3 py-2 text-center align-middle whitespace-nowrap">{{ dl.downloader }}</td>
+                <td class="px-3 py-2 text-center align-middle">
+                    {% if dl.mode == 0 %}
+                        <span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold text-purple-800 bg-purple-100 rounded-full">自动</span>
+                    {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold text-indigo-800 bg-indigo-100 rounded-full">手动</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 text-center align-middle">
+                    {% if dl.status == 1 %}
+                        <span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold text-green-800 bg-green-100 rounded-full">成功</span>
+                    {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 text-xs font-semibold text-red-800 bg-red-100 rounded-full">失败</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 whitespace-nowrap align-middle">{{ dl.download_time | strftime }}</td>
+                <td class="px-3 py-2 text-center align-middle whitespace-nowrap space-x-1">
+                    <a href="{{ dl.download_url }}" target="_blank" title="下载种子/磁力链接"
+                       class="inline-flex items-center justify-center h-7 w-7 text-xs font-medium rounded text-gray-700 bg-white border border-zinc-200 hover:bg-zinc-50">
+                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    </a>
+                    <button onclick="sendToDownloader('aria2', '{{ dl.title | replace("'", "\\'") }}', {{ dl.id }})"
+                            title="发送到 Aria2"
+                            class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-orange-700 bg-orange-100 hover:bg-orange-200">
+                            <svg class="h-4 w-4 mr-1" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M578.659 407.034l-61.184 120.32-61.184-120.32H344.64l138.24 256.634v0.25l20.48 44.032h97.28l132.858-256.634h-111.61Z m-229.472 72.192h61.184l102.4 227.066 102.4-227.066h61.184l-128.762 235.52v0.25l-20.48 36.864h-30.72l-128.762-235.52Z"></path></svg>
+                            <span>A2</span>
+                    </button>
+                    <button onclick="sendToDownloader('qbittorrent', '{{ dl.title | replace("'", "\\'") }}', {{ dl.id }})"
+                            title="发送到 qBittorrent"
+                            class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200">
+                            <svg class="h-4 w-4 mr-1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="#2598d2"><path d="M12,0C5.373,0,0,5.373,0,12s5.373,12,12,12s12-5.373,12-12S18.627,0,12,0z M8.945,16.945V12.835H6.835V6.946h9.999v5.889h-3.834v4.11H8.945z"></path></svg>
+                            <span>qB</span>
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="9" class="text-center py-8 text-gray-500">
+                    没有找到匹配的下载记录。
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4 flex items-center justify-between text-sm">
+    <div>
+        {% if total > 0 %}
+            共 {{ total }} 条记录，当前在第 {{ page }} / {{ total_pages }} 页。
+        {% else %}
+            无记录
+        {% endif %}
+    </div>
+    <div class="space-x-2">
+        {% if page > 1 %}
+            <a href="{{ request.url.remove_query_params('page').include_query_params(page=page - 1) }}"
+               class="px-3 py-1 bg-white border border-zinc-200 rounded hover:bg-zinc-50">上一页</a>
+        {% endif %}
+
+        {% if page < total_pages %}
+            <a href="{{ request.url.remove_query_params('page').include_query_params(page=page + 1) }}"
+               class="px-3 py-1 bg-white border border-zinc-200 rounded hover:bg-zinc-50">下一页</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== “发送到下载器”按钮的 API 调用函数 =====
+function sendToDownloader(type, title, recordId) {
+    const confirmation = confirm(`确定要将任务发送到 ${type} 吗？\n\n${title}`);
+
+    if (confirmation) {
+        // 显示一个简单的加载提示
+        const originalText = document.body.innerText;
+        document.body.insertAdjacentHTML('beforeend', '<div id="action-loading" class="fixed inset-0 bg-white/70 z-50 flex items-center justify-center"><p class="text-lg font-semibold">正在发送...</p></div>');
+
+        fetch('/redownload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: recordId,
+                downloader: type
+            })
+        })
+        .then(res => {
+            // 检查响应是否成功，否则解析错误信息并抛出
+            if (!res.ok) {
+                return res.json().then(err => { throw new Error(err.detail || '未知服务器错误'); });
+            }
+            return res.json();
+        })
+        .then(data => {
+            alert(data.message || '操作成功！');
+        })
+        .catch(err => {
+            // 移除加载提示
+            document.getElementById('action-loading')?.remove();
+            // 显示错误
+            alert(`操作失败: ${err.message}`);
+        })
+        .finally(() => window.location.reload());
+    }
+}
+
+// ===== 页面加载后执行的脚本 =====
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', function(event) {
+            // 1. 阻止表单的默认提交行为
+            event.preventDefault();
+
+            // 2. 创建 URLSearchParams 对象来构建新的查询字符串
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+
+            // 3. 遍历所有表单字段
+            for (const [key, value] of formData.entries()) {
+                // 4. 只将值不为空的字段添加到新的查询参数中
+                if (value) {
+                    params.append(key, value);
+                }
+            }
+
+            // 5. 将浏览器重定向到清理后的、干净的 URL
+            window.location.search = params.toString();
+        });
+    }
+});
+</script>
+{% endblock %}

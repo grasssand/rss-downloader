@@ -79,7 +79,7 @@ class RSSParser:
 
             if feed.bozo:
                 logger.error(
-                    f"{feed_name} 源解析错误，请检查 RSS 源: {feed.bozo_exception}"
+                    f"RSS 源解析错误，请检查 {feed_name}: {feed.bozo_exception}"
                 )
                 if hasattr(feed, "debug_message"):
                     logger.error(f"Debug 信息: {feed.debug_message}")
