@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "A Simple RSS Download Manager"
 readme = "README.md"
 authors = [
-    { name = "GrassSand" }
+    {name = "GrassSand", email = "grasssand@users.noreply.github.com"},
 ]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]>=0.116.1",
