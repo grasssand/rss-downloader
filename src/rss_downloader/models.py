@@ -164,7 +164,7 @@ class TorrentEntryMixin:
         )
 
         return {
-            "title": data.title,
+            "title": data.title if hasattr(data, "title") else "No Title",
             "url": url,
             "download_url": download_url,
             "published_time": published_time,
@@ -213,8 +213,8 @@ class DefaultEntry(ParsedItem):
         )
 
         return {
-            "title": data.title,
-            "url": data.id,
+            "title": data.title if hasattr(data, "title") else "No Title",
+            "url": data.id if hasattr(data, "id") else download_url,
             "download_url": download_url,
             "published_time": published_time,
         }
@@ -223,5 +223,6 @@ class DefaultEntry(ParsedItem):
 ENTRY_PARSER_MAP = {
     "mikan": MikanEntry,
     "dmhy": DmhyEntry,
+    "nyaa": NyaaEntry,
     "default": DefaultEntry,
 }
