@@ -147,12 +147,13 @@ class MikanEntry(ParsedItem):
     @root_validator(pre=True)
     @classmethod
     def pre_process(cls, values: Any) -> Any:
-        # if not isinstance(values, FeedParserDict):
-        #     return values
+        item_id = values.get("id")
+        if item_id and item_id.startswith("http"):
+            url = item_id
+        else:
+            url = values.get("link")
 
-        url = values.get("link")
         download_url = None
-
         # Mikan, dmhy 提取下载
         for link in values.get("links", []):  # type: ignore
             if link.get("type") in ["application/x-bittorrent"]:
@@ -161,7 +162,6 @@ class MikanEntry(ParsedItem):
 
         # Nyaa 等其他提取下载
         else:
-            url = values.get("id")
             download_url = values.get("link")
 
         # 发布时间提取
