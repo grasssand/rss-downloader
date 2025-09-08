@@ -1,6 +1,8 @@
 """RSS下载器 - 自动从RSS源获取并下载内容"""
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("rss_downloader")
 
 
 def main() -> None:
