@@ -1,6 +1,5 @@
 import re
 from functools import lru_cache
-from typing import Any
 
 import feedparser
 from pydantic import HttpUrl, ValidationError
@@ -23,32 +22,6 @@ class RSSParser:
         exclude_compiled = [re.compile(pattern) for pattern in exclude_patterns]
 
         return include_compiled, exclude_compiled
-
-    def _extract_download_url(
-        self, entry: Any, extractor_type: str
-    ) -> tuple[str | None, str | None]:
-        """根据提取器类型查找下载链接"""
-        url = download_url = None
-
-        # Mikan 处理逻辑
-        if extractor_type in ["mikan", "dmhy"] and hasattr(entry, "links"):
-            for link in entry.links:
-                if link.get("type") in ["application/x-bittorrent"]:
-                    url = entry.link if hasattr(entry, "link") else None
-                    download_url = link.get("href")
-                    break
-
-        # Nyaa 处理逻辑
-        elif extractor_type in ["nyaa"] and hasattr(entry, "link"):
-            url = entry.id if hasattr(entry, "id") else None
-            download_url = entry.link if hasattr(entry, "link") else None
-
-        # 默认处理逻辑
-        else:
-            url = entry.id if hasattr(entry, "id") else None
-            download_url = entry.link if hasattr(entry, "link") else None
-
-        return url, download_url
 
     def match_filters(self, title: str, feed_name: str) -> bool:
         """检查标题是否匹配指定源的过滤规则"""
