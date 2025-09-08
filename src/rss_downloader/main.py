@@ -58,22 +58,22 @@ class RSSDownloader:
         status = False
 
         if downloader == "aria2" and self.aria2:
-            result = self.aria2.add_link(item["download_url"])
+            result = self.aria2.add_link(str(item["download_url"]))
             if "error" not in result:
                 status = True
 
         elif downloader == "qbittorrent" and self.qbittorrent:
-            success = self.qbittorrent.add_link(item["download_url"])
+            success = self.qbittorrent.add_link(str(item["download_url"]))
             if success:
                 status = True
 
         else:
-            logger.error(f"未配置 {downloader}，无法添加任务")
+            logger.error(f"未配置 {downloader}，无法添加下载任务")
 
         if status:
-            logger.info(f"任务添加成功 ({downloader}): {item['title']}")
+            logger.info(f"下载任务添加成功 ({downloader}): {item['title']}")
         else:
-            logger.error(f"任务添加失败 ({downloader}): {item['title']}")
+            logger.error(f"下载任务添加失败 ({downloader}): {item['title']}")
 
         # 记录到数据库
         record = DownloadRecord(
@@ -107,44 +107,47 @@ class RSSDownloader:
         status = self._send_to_downloader(record.model_dump(), downloader, mode=1)
         return status
 
-    def process_feed(self, feed_name: str, feed_url: HttpUrl) -> int:
-        """处理单个RSS源"""
-        items = self.parser.parse_feed(feed_name, feed_url)
-        count = 0
+    def process_feed(self, feed_name: str, feed_url: HttpUrl) -> tuple[int, int, int]:
+        """处理单个RSS源，返回总数，匹配条目数和下载数"""
+        success = 0
 
-        # 获取当前源的信息
+        total, items = self.parser.parse_feed(feed_name, feed_url)
         downloader = self.config.get_feed_downloader(feed_name)
 
         for item in items:
-            if not item.get("download_url"):
-                continue
-
             # 检查是否已经下载过
-            if self.db.is_downloaded(item["download_url"]):
-                logger.info(f"跳过已下载项目: {item['title']}")
+            if self.db.is_downloaded(str(item.download_url)):
+                logger.info(f"跳过已下载项目: {item.title}")
                 continue
 
+            data = item.model_dump() | {"feed_name": feed_name, "feed_url": feed_url}
             # 添加下载任务
-            status = self._send_to_downloader(item, downloader)
+            status = self._send_to_downloader(data, downloader)
 
             if status:
-                count += 1
+                success += 1
 
-        return count
+        return total, len(items), success
 
     def run(self):
         """运行RSS下载器"""
-        total_items = 0
+        total_count = total_parsed = totle_success = 0
         try:
             for feed in self.config.feeds:
                 logger.info(f"处理 RSS 源: {feed.name} ({feed.url})")
-                count = self.process_feed(feed.name, feed.url)
-                total_items += count
+                count, parsed, success = self.process_feed(feed.name, feed.url)
+                total_count += count
+                total_parsed += parsed
+                totle_success += success
 
         except Exception as e:
             logger.error(f"运行时发生错误: {e}")
         finally:
-            logger.info(f"处理完成，共添加 {total_items} 个下载任务")
+            logger.info(
+                f"共获取到 {total_count} 个条目，"
+                f"匹配到 {total_parsed} 个条目。"
+                f"成功添加 {totle_success} 个下载任务。"
+            )
 
 
 rss_downloader = RSSDownloader()
