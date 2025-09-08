@@ -2,21 +2,8 @@ from typing import Any
 from urllib.parse import urljoin
 
 import requests
-from pydantic import BaseModel, HttpUrl
 
 from .logger import logger
-
-
-# 测试下载器连接性
-class Aria2TestPayload(BaseModel):
-    rpc: HttpUrl | None
-    secret: str | None = None
-
-
-class QBittorrentTestPayload(BaseModel):
-    host: HttpUrl | None
-    username: str | None = None
-    password: str | None = None
 
 
 class Aria2Client:
