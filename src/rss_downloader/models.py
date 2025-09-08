@@ -140,21 +140,22 @@ class TorrentEntryMixin:
         if not isinstance(data, FeedParserDict):
             return data
 
-        url = None
-        download_url = None
+        if hasattr(data, "id") and data.id.startswith("http"):  # type: ignore
+            url = data.id
+        else:
+            url = data.get("link")
 
-        # Mikan, dmhy 提取下载
+        download_url = None
         if hasattr(data, "links"):
+            # Mikan, dmhy 提取下载
             for link in data.links:
                 if link.get("type") in ["application/x-bittorrent"]:
-                    url = data.link if hasattr(data, "link") else None
                     download_url = link.href if hasattr(link, "href") else None
                     break
 
-        # Nyaa 等其他提取下载
-        else:
-            url = data.id if hasattr(data, "id") else None
-            download_url = data.link if hasattr(data, "link") else None
+            # Nyaa 等其他提取下载
+            else:
+                download_url = data.get("link")
 
         # 发布时间提取
         published_time = (
@@ -164,7 +165,7 @@ class TorrentEntryMixin:
         )
 
         return {
-            "title": data.title if hasattr(data, "title") else "No Title",
+            "title": data.get("title", "No Title"),
             "url": url,
             "download_url": download_url,
             "published_time": published_time,
