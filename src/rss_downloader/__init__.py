@@ -33,9 +33,13 @@ def main() -> None:
             import threading
             import time
 
-            import uvicorn
+            try:
+                import uvicorn
 
-            from .web import app
+                from .web import app
+            except ImportError:
+                logger.error("Web UI 依赖未安装！请安装 'rss-downloader[web]'")
+                return
 
             logger.info(f"启动 Web 界面: http://{config.web.host}:{config.web.port}")
 

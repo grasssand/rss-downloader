@@ -1,16 +1,16 @@
 log:
   level: info
 web:
-  enabled: true
+  enabled: false
   host: 127.0.0.1
   port: 8000
   interval_hours: 6
 aria2:
-  rpc: http://localhost:6800/jsonrpc
+  rpc: http://127.0.0.1:6800/jsonrpc
   secret: your_secret
   dir: null
 qbittorrent:
-  host: http://localhost:8080
+  host: http://127.0.0.1:8080
   username: admin
   password: password
 feeds:

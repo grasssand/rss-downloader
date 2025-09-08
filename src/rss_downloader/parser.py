@@ -101,7 +101,7 @@ class RSSParser:
         for entry in feed.entries:
             try:
                 # 调用 MikanEntry 等模型解析和验证
-                parsed_item = ParserModel.model_validate(entry)
+                parsed_item = ParserModel.parse_obj(entry)
 
                 if self.match_filters(parsed_item.title, feed_name):
                     matched_items.append(parsed_item)

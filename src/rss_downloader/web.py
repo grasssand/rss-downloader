@@ -179,7 +179,7 @@ def get_config():
 def update_config(new_cfg: Config):
     """API：更新配置"""
     try:
-        config.update(new_cfg.model_dump())
+        config.update(new_cfg.dict())
         return {"status": "ok"}
     except ValidationError as e:
         logger.error(f"配置验证失败: {e.errors()}")

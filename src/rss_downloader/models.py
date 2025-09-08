@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from feedparser.util import FeedParserDict
-from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, Field, HttpUrl, root_validator, validator
 
 
 # ==================================
@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 class LogConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
-    @field_validator("level", mode="before")
+    @validator("level", pre=True)
     @classmethod
     def standardize_level_case(cls, v: Any) -> Any:
         """在验证前，将 level 转换为大写"""
@@ -22,20 +22,20 @@ class LogConfig(BaseModel):
 
 
 class WebConfig(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
     host: str = "127.0.0.1"
     port: Annotated[int, Field(ge=0, le=65535)] = 8000
     interval_hours: Annotated[int, Field(gt=0)] = 6  # 检查 Feeds 更新间隔，单位小时
 
 
 class Aria2Config(BaseModel):
-    rpc: HttpUrl | None = HttpUrl("http://localhost:6800/jsonrpc")
+    rpc: HttpUrl | None = HttpUrl("http://127.0.0.1:6800/jsonrpc", scheme="http")  # type: ignore
     secret: str | None = None
     dir: str | None = None
 
 
 class QBittorrentConfig(BaseModel):
-    host: HttpUrl | None = HttpUrl("http://localhost:8080")
+    host: HttpUrl | None = HttpUrl("http://127.0.0.1:8080", scheme="http")  # type: ignore
     username: str | None = None
     password: str | None = None
 
@@ -55,17 +55,20 @@ class FeedConfig(BaseModel):
     downloader: Literal["aria2", "qbittorrent"] = "aria2"  # 默认下载器为 aria2
     content_extractor: str = "default"  # or "mikan", "nyaa"...
 
-    @model_validator(mode="after")
-    def set_content_extractor_from_url(self) -> "FeedConfig":
+    @root_validator()
+    def set_content_extractor_from_url(cls, values: dict) -> dict:
         """根据 url 自动设置 content_extractor"""
-        if self.content_extractor == "default" and self.url and self.url.host:
-            hostname = self.url.host.lower()
+        extractor = values.get("content_extractor")
+        url = values.get("url")
+
+        if extractor == "default" and url and url.host:
+            hostname = url.host.lower()
             for extractor_name, domains in EXTRACTOR_DOMAIN_MAP.items():
                 if any(hostname.endswith(domain) for domain in domains):
-                    self.content_extractor = extractor_name
+                    values["content_extractor"] = extractor_name
                     break
 
-        return self
+        return values
 
 
 class Config(BaseModel):
@@ -75,21 +78,26 @@ class Config(BaseModel):
     qbittorrent: QBittorrentConfig | None = None
     feeds: list[FeedConfig] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def check_downloader_config_exists(self) -> "Config":
-        used_downloaders = {feed.downloader for feed in self.feeds}
+    @root_validator()
+    def check_downloader_config_exists(cls, values: dict) -> dict:
+        """检查 Feed 使用的下载器是否已配置"""
+        feeds = values.get("feeds", [])
+        aria2_config = values.get("aria2")
+        qb_config = values.get("qbittorrent")
 
-        if "aria2" in used_downloaders and self.aria2 is None:
+        used_downloaders = {feed.downloader for feed in feeds}
+
+        if "aria2" in used_downloaders and not aria2_config:
             raise ValueError("Feed 中指定了 aria2 下载器, 但未提供 [aria2] 配置")
 
-        if "qbittorrent" in used_downloaders and self.qbittorrent is None:
+        if "qbittorrent" in used_downloaders and not qb_config:
             raise ValueError(
                 "Feed 中指定了 qbittorrent 下载器, 但未提供 [qbittorrent] 配置"
             )
 
-        return self
+        return values
 
-    @field_validator("feeds")
+    @validator("feeds")
     @classmethod
     def check_unique_feed_names(cls, v: list[FeedConfig]) -> list[FeedConfig]:
         """检查 Feed 名称唯一性"""
@@ -133,66 +141,64 @@ class ParsedItem(BaseModel):
     published_time: datetime
 
 
-class TorrentEntryMixin:
-    @model_validator(mode="before")
-    @classmethod
-    def pre_process(cls, data: Any) -> Any:
-        if not isinstance(data, FeedParserDict):
-            return data
+class MikanEntry(ParsedItem):
+    """解析 Mikan RSS 源模型"""
 
-        url = None
+    @root_validator(pre=True)
+    @classmethod
+    def pre_process(cls, values: Any) -> Any:
+        # if not isinstance(values, FeedParserDict):
+        #     return values
+
+        url = values.get("link")
         download_url = None
 
         # Mikan, dmhy 提取下载
-        if hasattr(data, "links"):
-            for link in data.links:
-                if link.get("type") in ["application/x-bittorrent"]:
-                    url = data.link if hasattr(data, "link") else None
-                    download_url = link.href if hasattr(link, "href") else None
-                    break
+        for link in values.get("links", []):  # type: ignore
+            if link.get("type") in ["application/x-bittorrent"]:
+                download_url = link.get("href")
+                break
 
         # Nyaa 等其他提取下载
         else:
-            url = data.id if hasattr(data, "id") else None
-            download_url = data.link if hasattr(data, "link") else None
+            url = values.get("id")
+            download_url = values.get("link")
 
         # 发布时间提取
         published_time = (
-            datetime.fromtimestamp(time.mktime(data.published_parsed))  # type: ignore
-            if hasattr(data, "published_parsed")
+            datetime.fromtimestamp(time.mktime(values["published_parsed"]))
+            if "published_parsed" in values
             else datetime.now()
         )
 
         return {
-            "title": data.title if hasattr(data, "title") else "No Title",
+            "title": values.get("title", "No Title"),
             "url": url,
             "download_url": download_url,
             "published_time": published_time,
         }
 
 
-class MikanEntry(TorrentEntryMixin, ParsedItem):
-    """解析 Mikan RSS 源模型"""
-
-    pass
-
-
-class DmhyEntry(TorrentEntryMixin, ParsedItem):
+class DmhyEntry(ParsedItem):
     """解析动漫花园 RSS 源模型"""
 
-    pass
+    @root_validator(pre=True)
+    def pre_process(cls, values: Any) -> dict:
+        return MikanEntry.pre_process(values)
 
 
-class NyaaEntry(TorrentEntryMixin, ParsedItem):
+class NyaaEntry(ParsedItem):
     """解析动漫花园 RSS 源模型"""
 
-    pass
+    @root_validator(pre=True)
+    def pre_process(cls, values: Any) -> dict:
+        return MikanEntry.pre_process(values)
 
 
 class DefaultEntry(ParsedItem):
     """通用的回退解析模型"""
 
-    @model_validator(mode="before")
+    @root_validator(pre=True)
     @classmethod
     def pre_process(cls, data: Any) -> Any:
         if not isinstance(data, FeedParserDict):

@@ -52,7 +52,7 @@ class ConfigManager:
         if self.config_path.exists():
             with self.config_path.open("r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-            merged = _deep_merge(default_cfg.model_dump(), data)
+            merged = _deep_merge(default_cfg.dict(), data)
             if merged != data:
                 with self.config_path.open("w", encoding="utf-8") as f:
                     yaml.safe_dump(
@@ -62,13 +62,13 @@ class ConfigManager:
                         sort_keys=False,
                         default_flow_style=False,
                     )
-            return Config.model_validate(merged)
+            return Config.parse_obj(merged)
 
         else:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with self.config_path.open("w", encoding="utf-8") as f:
                 yaml.safe_dump(
-                    default_cfg.model_dump(),
+                    default_cfg.dict(),
                     f,
                     allow_unicode=True,
                     sort_keys=False,
@@ -87,13 +87,13 @@ class ConfigManager:
         logger.debug(f"尝试更新配置: {new_data}")
 
         with self._lock:
-            current_dump = self._config.model_dump(mode="json")
+            current_dump = self._config.dict()
             try:
                 merged = _deep_merge(current_dump, new_data)
-                self._config = Config.model_validate(merged)
+                self._config = Config.parse_obj(merged)
                 with self.config_path.open("w", encoding="utf-8") as f:
                     yaml.safe_dump(
-                        self._config.model_dump(mode="json"),
+                        self._config.dict(),
                         f,
                         allow_unicode=True,
                         sort_keys=False,
@@ -101,7 +101,7 @@ class ConfigManager:
                     )
             except Exception as e:
                 logger.exception(f"更新配置文件时发生错误: {e}")
-                self._config = Config.model_validate(current_dump)
+                self._config = Config.parse_obj(current_dump)
 
     def initialize(self, cli_force_web: bool = False):
         """根据命令行参数或配置文件启用配置热重载"""

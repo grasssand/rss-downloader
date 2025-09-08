@@ -104,7 +104,7 @@ class RSSDownloader:
             logger.error(f"记录 ID 为 {id} 的下载记录没有下载链接")
             return False
 
-        status = self._send_to_downloader(record.model_dump(), downloader, mode=1)
+        status = self._send_to_downloader(record.dict(), downloader, mode=1)
         return status
 
     def process_feed(self, feed_name: str, feed_url: HttpUrl) -> tuple[int, int, int]:
@@ -120,7 +120,7 @@ class RSSDownloader:
                 logger.info(f"跳过已下载项目: {item.title}")
                 continue
 
-            data = item.model_dump() | {"feed_name": feed_name, "feed_url": feed_url}
+            data = item.dict() | {"feed_name": feed_name, "feed_url": feed_url}
             # 添加下载任务
             status = self._send_to_downloader(data, downloader)
 

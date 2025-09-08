@@ -104,7 +104,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM downloads WHERE id = ?", (id,))
             row = cursor.fetchone()
-            return DownloadRecord.model_validate(dict(row)) if row else None
+            return DownloadRecord.parse_obj(dict(row)) if row else None
 
     def search_downloads(
         self,
@@ -181,9 +181,7 @@ class Database:
             query_parts.append("ORDER BY download_time DESC LIMIT ? OFFSET ?")
             params.extend([limit, offset])
             cursor.execute(" ".join(query_parts), params)
-            results = [
-                DownloadRecord.model_validate(dict(row)) for row in cursor.fetchall()
-            ]
+            results = [DownloadRecord.parse_obj(dict(row)) for row in cursor.fetchall()]
 
             return results, total_count
 
