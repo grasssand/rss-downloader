@@ -349,23 +349,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ===== 测试连接功能 =====
     async function testConnection(type) {
+        const url = `/test-downloader/${type}`;
         let payload;
+
         if (type === 'aria2') {
             payload = {
                 rpc: document.getElementById("aria2_rpc").value.trim() || null,
                 secret: document.getElementById("aria2_secret").value.trim() || null
             };
-        } else {
+        } else if (type === 'qbittorrent') {
             payload = {
                 host: document.getElementById("qb_host").value.trim() || null,
                 username: document.getElementById("qb_username").value.trim() || null,
                 password: document.getElementById("qb_password").value
             };
+        } else {
+            showToast(`未知的下载器类型: ${type}`, 'error');
+            return;
         }
 
         showLoading();
         try {
-            const response = await fetch(`/test-downloader/${type}`, {
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

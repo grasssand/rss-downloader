@@ -8,16 +8,15 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 
-from .config import Config, config
+from .config import config
 from .database import db
 from .downloaders import (
     Aria2Client,
-    Aria2TestPayload,
     QBittorrentClient,
-    QBittorrentTestPayload,
 )
 from .logger import logger
 from .main import rss_downloader
+from .models import Aria2Config, Config, QBittorrentConfig
 
 app = FastAPI(title="RSS下载器管理界面")
 
@@ -196,46 +195,46 @@ def config_page(request: Request):
     return templates.TemplateResponse("config.html", {"request": request})
 
 
-@app.post("/test-downloader/{downloader_name}")
-async def test_downloader_connection(downloader_name: str, request: Request):
-    """测试下载器连接"""
-    payload = await request.json()
-
+@app.post("/test-downloader/aria2")
+async def test_aria2_connection(data: Aria2Config):
+    """测试 Aria2 连接"""
     try:
-        if downloader_name == "aria2":
-            data = Aria2TestPayload.model_validate(payload)
-            if not data.rpc:
-                raise ValueError("RPC 地址不能为空")
+        if not data.rpc:
+            raise ValueError("RPC 地址不能为空")
 
-            client = Aria2Client(rpc_url=str(data.rpc), secret=data.secret)
-            result = client.get_version()
-            if "error" in result:
-                raise ValueError(result["error"]["message"])
-            return {
-                "status": "success",
-                "version": result.get("result", {}).get("version", "未知"),
-            }
-
-        elif downloader_name == "qbittorrent":
-            data = QBittorrentTestPayload.model_validate(payload)
-            if not data.host:
-                raise ValueError("Host 不能为空")
-
-            client = QBittorrentClient(
-                host=str(data.host), username=data.username, password=data.password
-            )
-            result = client.get_version()
-            if "error" in result:
-                raise ValueError(result["error"])
-            return {"status": "success", "version": result["version"]}
-
-        else:
-            raise HTTPException(status_code=404, detail="未知的下载器类型")
-
+        client = Aria2Client(rpc_url=str(data.rpc), secret=data.secret)
+        result = client.get_version()
+        if "error" in result:
+            raise ValueError(result["error"]["message"])
+        return {
+            "status": "success",
+            "version": result.get("result", {}).get("version", "未知"),
+        }
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception(f"测试 {downloader_name} 连接失败")
+        logger.exception("测试 Aria2 连接失败")
+        raise HTTPException(status_code=500, detail=f"连接失败: {e}")
+
+
+@app.post("/test-downloader/qbittorrent")
+async def test_qbittorrent_connection(data: QBittorrentConfig):
+    """测试 qBittorrent 连接"""
+    try:
+        if not data.host:
+            raise ValueError("Host 不能为空")
+
+        client = QBittorrentClient(
+            host=str(data.host), username=data.username, password=data.password
+        )
+        result = client.get_version()
+        if "error" in result:
+            raise ValueError(result["error"])
+        return {"status": "success", "version": result["version"]}
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("测试 qBittorrent 连接失败")
         raise HTTPException(status_code=500, detail=f"连接失败: {e}")
 
 
