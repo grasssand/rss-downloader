@@ -145,11 +145,11 @@ class Database:
             params.append(mode)
 
         if published_start_time:
-            query_parts.append("AND download_time >= ?")
+            query_parts.append("AND published_time >= ?")
             params.append(published_start_time)
 
         if published_end_time:
-            query_parts.append("AND download_time <= ?")
+            query_parts.append("AND published_time <= ?")
             params.append(published_end_time)
 
         if download_start_time:
