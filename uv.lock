@@ -430,7 +430,7 @@ wheels = [
 
 [[package]]
 name = "rss-downloader"
-version = "0.1.2+compat"
+version = "0.1.3+compat"
 source = { editable = "." }
 dependencies = [
     { name = "feedparser" },
