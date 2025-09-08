@@ -1,3 +1,10 @@
+## v0.1.2 (2025-09-08)
+
+### Fix
+
+- **models**: Entry model 设置默认值
+- **database**: 修复 published_time 查询
+
 ## v0.1.1 (2025-09-08)
 
 ### Feat
