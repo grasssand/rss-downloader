@@ -6,7 +6,7 @@
 
 ### 1. 安装 🚀
 
-需要 Python 环境。
+需要 Python 环境。下载 [最新 wheel 包](https://github.com/grasssand/rss-downloader/releases) 并安装。
 
 ```bash
 # pipx
@@ -69,3 +69,6 @@ options:
   -h, --help  显示帮助信息
   -w, --web   启动 Web 界面
 ```
+
+![下载记录](./assets/下载记录.png)
+![配置管理](./assets/配置管理.png)
