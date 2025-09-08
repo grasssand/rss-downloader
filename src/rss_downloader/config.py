@@ -2,113 +2,13 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import (
-    BaseModel,
-    Field,
-    HttpUrl,
-    field_validator,
-    model_validator,
-)
+
+from .models import Aria2Config, Config, FeedConfig, QBittorrentConfig, WebConfig
 
 CONFIG_FILE = "config.yaml"
-EXTRACTOR_DOMAIN_MAP = {
-    "mikan": ("mikanime.tv", "mikanani.me"),
-    "nyaa": ("nyaa.si",),
-    "dmhy": ("dmhy.org",),
-}
-
-
-class LogConfig(BaseModel):
-    level: Literal["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-
-    @field_validator("level", mode="before")
-    @classmethod
-    def standardize_level_case(cls, v: Any) -> Any:
-        """在验证前，将 level 转换为大写"""
-        if isinstance(v, str):
-            return v.upper()
-        return v
-
-
-class WebConfig(BaseModel):
-    enabled: bool = True
-    host: str = "127.0.0.1"
-    port: Annotated[int, Field(ge=0, le=65535)] = 8000
-    interval_hours: Annotated[int, Field(gt=0)] = 6  # 检查 Feeds 更新间隔，单位小时
-
-
-class Aria2Config(BaseModel):
-    rpc: HttpUrl | None = HttpUrl("http://localhost:6800/jsonrpc")
-    secret: str | None = None
-    dir: str | None = None
-
-
-class QBittorrentConfig(BaseModel):
-    host: HttpUrl | None = HttpUrl("http://localhost:8080")
-    username: str | None = None
-    password: str | None = None
-
-
-class FeedConfig(BaseModel):
-    name: str
-    url: HttpUrl
-    include: list[str] = Field(default_factory=list)
-    exclude: list[str] = Field(default_factory=list)
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"  # 默认下载器为 aria2
-    content_extractor: str = "default"  # or "mikan", "nyaa"...
-
-    @model_validator(mode="after")
-    def set_content_extractor_from_url(self) -> "FeedConfig":
-        """根据 url 自动设置 content_extractor"""
-        if self.content_extractor == "default" and self.url and self.url.host:
-            hostname = self.url.host.lower()
-            for extractor_name, domains in EXTRACTOR_DOMAIN_MAP.items():
-                if any(hostname.endswith(domain) for domain in domains):
-                    self.content_extractor = extractor_name
-                    break
-
-        return self
-
-
-class Config(BaseModel):
-    log: LogConfig = Field(default_factory=LogConfig)
-    web: WebConfig = Field(default_factory=WebConfig)
-    aria2: Aria2Config | None = None
-    qbittorrent: QBittorrentConfig | None = None
-    feeds: list[FeedConfig] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def check_downloader_config_exists(self) -> "Config":
-        used_downloaders = {feed.downloader for feed in self.feeds}
-
-        if "aria2" in used_downloaders and self.aria2 is None:
-            raise ValueError("Feed 中指定了 aria2 下载器, 但未提供 [aria2] 配置")
-
-        if "qbittorrent" in used_downloaders and self.qbittorrent is None:
-            raise ValueError(
-                "Feed 中指定了 qbittorrent 下载器, 但未提供 [qbittorrent] 配置"
-            )
-
-        return self
-
-    @field_validator("feeds")
-    @classmethod
-    def check_unique_feed_names(cls, v: list[FeedConfig]) -> list[FeedConfig]:
-        """检查 Feed 名称唯一性"""
-        seen = set()
-        for feed in v:
-            key = feed.name.strip().lower()
-            if key in seen:
-                raise ValueError(f"Feed 名称重复: {feed.name}")
-            seen.add(key)
-        return v
-
-    @classmethod
-    def default(cls) -> "Config":
-        return cls()
 
 
 def _deep_merge(default: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
@@ -232,6 +132,13 @@ class ConfigManager:
     @property
     def feeds(self) -> list[FeedConfig]:
         return self.get().feeds
+
+    def get_feed_by_name(self, feed_name: str) -> FeedConfig | None:
+        for feed in self.feeds:
+            if feed.name == feed_name:
+                return feed
+
+        return None
 
     def get_feed_patterns(self, feed_name: str) -> tuple[list[str], list[str]]:
         """获取指定RSS源的过滤规则"""

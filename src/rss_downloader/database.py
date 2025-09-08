@@ -1,27 +1,11 @@
 import sqlite3
 from datetime import datetime
-from typing import Annotated, Literal
-
-from pydantic import BaseModel, Field, HttpUrl
 
 from .config import config
 from .logger import logger
+from .models import DownloadRecord
 
 DATABASE_FILE = "downloads.db"
-
-
-class DownloadRecord(BaseModel):
-    id: int | None = None
-    title: str = Field(..., min_length=1)
-    url: Annotated[str, HttpUrl]
-    download_url: Annotated[str, HttpUrl]
-    feed_name: str
-    feed_url: Annotated[str, HttpUrl]
-    published_time: datetime
-    download_time: datetime
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"
-    status: Literal[0, 1] = 0
-    mode: Literal[0, 1] = 0
 
 
 class Database:

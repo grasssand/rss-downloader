@@ -3,8 +3,6 @@ from datetime import datetime
 
 from loguru import logger
 
-from .config import config
-
 
 class InterceptHandler(logging.Handler):
     """拦截标准日志的处理器，将其重定向到loguru"""
@@ -27,6 +25,8 @@ class InterceptHandler(logging.Handler):
 
 
 def setup_logger():
+    from .config import config
+
     """配置日志系统"""
     # 设置日志目录
     log_dir = config.config_path.parent / "logs"

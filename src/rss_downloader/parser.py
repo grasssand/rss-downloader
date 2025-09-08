@@ -1,14 +1,13 @@
 import re
-import time
-from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
 import feedparser
-from pydantic import HttpUrl
+from pydantic import HttpUrl, ValidationError
 
 from .config import config
 from .logger import logger
+from .models import ENTRY_PARSER_MAP, ParsedItem
 
 
 class RSSParser:
@@ -71,67 +70,46 @@ class RSSParser:
 
         return is_included
 
-    def parse_feed(self, feed_name: str, feed_url: HttpUrl) -> list[dict[str, Any]]:
-        """解析RSS源并返回匹配的条目"""
-        try:
-            logger.info(f"开始解析 RSS 源: {feed_name} ({feed_url})")
-            feed = feedparser.parse(str(feed_url))
+    def parse_feed(
+        self, feed_name: str, feed_url: HttpUrl
+    ) -> tuple[int, list[ParsedItem]]:
+        """解析RSS源并返回总数和匹配的条目"""
+        matched_items: list[ParsedItem] = []
 
-            if feed.bozo:
-                logger.error(
-                    f"RSS 源解析错误，请检查 {feed_name}: {feed.bozo_exception}"
-                )
-                if hasattr(feed, "debug_message"):
-                    logger.error(f"Debug 信息: {feed.debug_message}")
-                return []
+        feed_config = config.get_feed_by_name(feed_name)
+        extractor_type = feed_config.content_extractor if feed_config else "default"
+        ParserModel: ParsedItem = ENTRY_PARSER_MAP.get(
+            extractor_type, ENTRY_PARSER_MAP["default"]
+        )
 
-            # 检查是否成功获取到feed
-            if not feed.entries and not getattr(feed, "feed", None):
-                logger.error(f"Feed 为空或无法访问 ({feed_url})")
-                return []
+        logger.info(f"开始解析 RSS 源: {feed_name} ({feed_url})")
+        feed = feedparser.parse(str(feed_url))
 
-            logger.info(f"成功获取到 {len(feed.entries)} 个条目")
-            matched_items = []
-            for entry in feed.entries:
-                try:
-                    title = str(entry.title) if hasattr(entry, "title") else None
-                    url = download_url = None
-                    # 下载链接适用于Mikan、Nyaa...
-                    if hasattr(entry, "links"):
-                        for link in entry.links:
-                            if link.get("type") in ["application/x-bittorrent"]:
-                                url = entry.link if hasattr(entry, "link") else None
-                                download_url = link.get("href")
-                                break
-                        else:
-                            url = entry.id if hasattr(entry, "id") else None
-                            download_url = (
-                                entry.link if hasattr(entry, "link") else None
-                            )
+        if feed.bozo:
+            logger.error(f"RSS 源解析错误，请检查 {feed_name}: {feed.bozo_exception}")
+            if hasattr(feed, "debug_message"):
+                logger.error(f"Debug 信息: {feed.debug_message}")
+            return 0, []
 
-                    if title and self.match_filters(title, feed_name):
-                        item = {
-                            "title": title,
-                            "url": url,
-                            "download_url": download_url,
-                            "feed_name": feed_name,
-                            "feed_url": str(feed_url),
-                            "published_time": datetime.fromtimestamp(
-                                time.mktime(
-                                    entry.published_parsed,  # type: ignore
-                                )
-                            )
-                            if hasattr(entry, "published_parsed")
-                            else datetime.now(),
-                        }
-                        matched_items.append(item)
-                except Exception as entry_error:
-                    logger.error(f"处理条目时发生错误: {entry_error}")
-                    continue
+        # 检查是否成功获取到feed
+        if not feed.entries and not getattr(feed, "feed", None):
+            logger.error(f"Feed 为空或无法访问 ({feed_url})")
+            return 0, []
 
-            logger.info(f"匹配到 {len(matched_items)} 个条目")
-            return matched_items
+        logger.info(f"成功获取到 {len(feed.entries)} 个条目")
 
-        except Exception as e:
-            logger.error(f"解析 {feed_name} ({feed_url}) 时发生错误: {e}")
-            return []
+        for entry in feed.entries:
+            try:
+                # 调用 MikanEntry 等模型解析和验证
+                parsed_item = ParserModel.model_validate(entry)
+
+                if self.match_filters(parsed_item.title, feed_name):
+                    matched_items.append(parsed_item)
+
+            except ValidationError as entry_error:
+                logger.error(f"处理条目时发生错误: {entry_error}")
+                continue
+
+        logger.info(f"匹配到 {len(matched_items)} 个条目")
+
+        return len(feed.entries), matched_items
