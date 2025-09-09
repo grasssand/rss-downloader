@@ -8,40 +8,43 @@ from .config import ConfigManager
 from .models import ENTRY_PARSER_MAP, ParsedItem
 
 
+@lru_cache(maxsize=32)
+def _compile_patterns(
+    feed_name: str,
+    config_version: int,
+    patterns: tuple[str, ...],
+    logger,
+) -> list[re.Pattern]:
+    """获取并编译指定RSS源的过滤规则"""
+    logger.debug(f"编译过滤规则: {feed_name} (version {config_version})")
+    return [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+
+
 class RSSParser:
     def __init__(self, config: ConfigManager, logger):
         self.config = config
         self.logger = logger
 
-    @lru_cache(maxsize=32)
-    def _get_patterns_for_feed(
-        self, feed_name: str, config_version: int
-    ) -> tuple[list[re.Pattern], list[re.Pattern]]:
-        """获取并编译指定RSS源的过滤规则"""
-        self.logger.debug(f"编译过滤规则: {feed_name} (version {config_version})")
-
-        include_patterns, exclude_patterns = self.config.get_feed_patterns(feed_name)
-        include_compiled = [re.compile(pattern) for pattern in include_patterns]
-        exclude_compiled = [re.compile(pattern) for pattern in exclude_patterns]
-
-        return include_compiled, exclude_compiled
-
     def match_filters(self, title: str, feed_name: str) -> bool:
         """检查标题是否匹配指定源的过滤规则"""
         # 获取当前配置版本以确保缓存正确
         current_version = self.config.get_config_version()
-        include_patterns, exclude_patterns = self._get_patterns_for_feed(
-            feed_name, current_version
+        include_patterns, exclude_patterns = self.config.get_feed_patterns(feed_name)
+        include_compiled = _compile_patterns(
+            feed_name, current_version, tuple(include_patterns), self.logger
+        )
+        exclude_compiled = _compile_patterns(
+            feed_name, current_version, tuple(exclude_patterns), self.logger
         )
 
         # 如果没有包含规则，则默认匹配
-        if not include_patterns:
+        if not include_compiled:
             is_included = True
         else:
-            is_included = any(pattern.search(title) for pattern in include_patterns)
+            is_included = any(pattern.search(title) for pattern in include_compiled)
 
         # 如果匹配任何排除规则，则返回False
-        if any(pattern.search(title) for pattern in exclude_patterns):
+        if any(pattern.search(title) for pattern in exclude_compiled):
             return False
 
         return is_included
@@ -74,7 +77,7 @@ class RSSParser:
             self.logger.error(f"Feed 为空或无法访问 ({feed_url})")
             return 0, []
 
-        self.logger.info(f"成功获取到 {len(feed.entries)} 个条目")
+        self.logger.info(f"{feed_name}: 获取到 {len(feed.entries)} 个条目")
 
         for entry in feed.entries:
             try:
@@ -91,6 +94,6 @@ class RSSParser:
                 self.logger.error(f"处理条目时发生错误: {entry_error}")
                 continue
 
-        self.logger.info(f"匹配到 {len(matched_items)} 个条目")
+        self.logger.info(f"{feed_name}: 匹配到 {len(matched_items)} 个条目")
 
         return len(feed.entries), matched_items
