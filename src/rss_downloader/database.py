@@ -2,18 +2,36 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from .logger import LoggerProtocol
 from .models import DownloadRecord
 
 
+def adapt_datetime(dt_obj: datetime) -> str:
+    """将 datetime 对象转换为 ISO 8601 格式的字符串以便存储。"""
+    return dt_obj.isoformat()
+
+
+def convert_datetime(iso_str: bytes) -> datetime:
+    """将从数据库读取的 ISO 8601 格式字符串转换回 datetime 对象。"""
+    return datetime.fromisoformat(iso_str.decode())
+
+
+# https://docs.python.org/3/library/sqlite3.html#sqlite3-adapter-converter-recipes
+sqlite3.register_adapter(datetime, adapt_datetime)
+sqlite3.register_converter("TIMESTAMP", convert_datetime)
+
+
 class Database:
-    def __init__(self, db_path: Path, logger):
+    def __init__(self, db_path: Path, logger: LoggerProtocol):
         self.db_path = db_path
         self.logger = logger
         self._init_db()
 
     def _init_db(self):
         """初始化数据库表"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS downloads (
@@ -34,7 +52,9 @@ class Database:
 
     def reset(self):
         """重置数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             cursor = conn.cursor()
             cursor.execute("DROP TABLE IF EXISTS downloads")
             conn.commit()
@@ -55,7 +75,9 @@ class Database:
             mode: 下载模式，0表示自动下载，1表示手动下载
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(
+                self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+            ) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
@@ -86,7 +108,9 @@ class Database:
 
     def is_downloaded(self, url: str) -> bool:
         """检查URL是否已经下载过"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT COUNT(*) FROM downloads WHERE status = 1 and download_url = ?",
@@ -97,7 +121,9 @@ class Database:
 
     def search_download_by_id(self, id: int) -> DownloadRecord | None:
         """通过ID获取下载记录"""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM downloads WHERE id = ?", (id,))
@@ -160,7 +186,9 @@ class Database:
 
         count_params = list(params)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(
+            self.db_path, detect_types=sqlite3.PARSE_DECLTYPES
+        ) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
