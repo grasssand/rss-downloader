@@ -101,10 +101,6 @@ class Config(BaseModel):
             seen.add(key)
         return v
 
-    @classmethod
-    def default(cls) -> "Config":
-        return cls()
-
 
 class ConfigUpdatePayload(BaseModel):
     """定义了允许通过 API 更新的配置字段"""
@@ -209,11 +205,16 @@ class DefaultEntry(ParsedItem):
         if not isinstance(data, FeedParserDict):
             return data
 
+        if hasattr(data, "id") and data.id.startswith("http"):  # type: ignore
+            url = data.id
+        else:
+            url = data.get("link")
+
         download_url = data.get("link")
         if hasattr(data, "links"):
             for link in data.links:
                 if link.rel == "enclosure":
-                    download_url = link.href
+                    download_url = link.href if hasattr(link, "href") else None
                     break
 
         # 发布时间提取
@@ -224,8 +225,8 @@ class DefaultEntry(ParsedItem):
         )
 
         return {
-            "title": data.title if hasattr(data, "title") else "No Title",
-            "url": data.id if hasattr(data, "id") else download_url,
+            "title": data.get("title", "No Title"),
+            "url": url,
             "download_url": download_url,
             "published_time": published_time,
         }
