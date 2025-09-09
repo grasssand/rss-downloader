@@ -6,6 +6,7 @@ from pydantic import HttpUrl
 from .config import ConfigManager
 from .database import Database, DownloadRecord
 from .downloaders import Aria2Client, QBittorrentClient
+from .logger import LoggerProtocol
 from .parser import RSSParser
 
 
@@ -18,11 +19,16 @@ class ItemNotFoundError(Exception):
 
 
 class RSSDownloader:
-    def __init__(self, config: ConfigManager, database: Database, logger):
+    def __init__(
+        self, config: ConfigManager, database: Database, logger: LoggerProtocol
+    ):
         self.config = config
         self.parser = RSSParser(config=config, logger=logger)
         self.db = database
         self.logger = logger
+        self.aria2 = None
+        self.qbittorrent = None
+
         self._setup_downloaders()
 
     def _setup_downloaders(self):
@@ -30,30 +36,30 @@ class RSSDownloader:
         # 初始化 Aria2 客户端
         aria2_config = self.config.aria2
         if aria2_config and aria2_config.rpc:
-            self.aria2 = Aria2Client(
-                rpc_url=str(aria2_config.rpc),
-                secret=aria2_config.secret,
-                dir=aria2_config.dir,
-                logger=self.logger,
-            )
-        else:
-            self.aria2 = None
+            try:
+                self.aria2 = Aria2Client(
+                    logger=self.logger,
+                    rpc_url=str(aria2_config.rpc),
+                    secret=aria2_config.secret,
+                    dir=aria2_config.dir,
+                )
+            except Exception as e:
+                self.logger.error(f"初始化 Aria2 客户端失败，任务将无法下载。({e})")
 
         # 初始化 qBittorrent 客户端
         qb_config = self.config.qbittorrent
         if qb_config and qb_config.host:
             try:
                 self.qbittorrent = QBittorrentClient(
+                    logger=self.logger,
                     host=str(qb_config.host),
                     username=qb_config.username,
                     password=qb_config.password,
-                    logger=self.logger,
                 )
             except Exception as e:
-                self.logger.error("初始化 qBittorrent 客户端失败，任务将无法下载。")
-                raise ConnectionError(f"无法连接到 qBittorrent: {e}") from e
-        else:
-            self.qbittorrent = None
+                self.logger.error(
+                    f"初始化 qBittorrent 客户端失败，任务将无法下载。({e})"
+                )
 
         if not self.aria2 and not self.qbittorrent:
             self.logger.warning("未配置任何下载器，无法下载内容")
@@ -75,12 +81,10 @@ class RSSDownloader:
                     error_message = result["error"]
                 else:
                     status = True
+
             elif downloader == "qbittorrent" and self.qbittorrent:
-                success = self.qbittorrent.add_link(str(item["download_url"]))
-                if success:
+                if self.qbittorrent.add_link(str(item["download_url"])):
                     status = True
-                else:
-                    error_message = "qBittorrent API 返回失败"
             else:
                 error_message = f"下载器 {downloader} 未配置或不可用"
 
@@ -144,7 +148,7 @@ class RSSDownloader:
                 self._send_to_downloader(data, downloader)
                 success += 1
             except DownloaderError as e:
-                self.logger.error(f"处理 '{item.title}' 失败: {e}")
+                self.logger.error(f"处理失败 '{item.title}' : {e}")
             except Exception as e:
                 self.logger.exception(f"下载时发生未知错误 (ID: {id}): {e}")
 
