@@ -103,13 +103,15 @@ class RSSDownloader:
             mode=mode,
         )
         new_id = self.db.insert(record)
-        self.logger.debug(f"新下载记录: {new_id} - {item['title']}")
 
         if status:
             self.logger.info(
                 f"下载任务添加成功 ({downloader}): {new_id} - {item['title']}"
             )
         else:
+            self.logger.debug(
+                f"下载失败记录已创建 ({downloader}): {new_id} - {item['title']}"
+            )
             raise DownloaderError(f"任务添加失败 ({downloader}): {error_message}")
 
     def redownload(self, id: int, downloader: Literal["aria2", "qbittorrent"]) -> None:
