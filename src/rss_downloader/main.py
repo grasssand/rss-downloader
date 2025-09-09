@@ -3,18 +3,26 @@ from typing import Any, Literal
 
 from pydantic import HttpUrl
 
-from .config import config
-from .database import DownloadRecord, db
+from .config import ConfigManager
+from .database import Database, DownloadRecord
 from .downloaders import Aria2Client, QBittorrentClient
-from .logger import logger
 from .parser import RSSParser
 
 
+class DownloaderError(Exception):
+    pass
+
+
+class ItemNotFoundError(Exception):
+    pass
+
+
 class RSSDownloader:
-    def __init__(self):
+    def __init__(self, config: ConfigManager, database: Database, logger):
         self.config = config
-        self.parser = RSSParser()
-        self.db = db
+        self.parser = RSSParser(config=config, logger=logger)
+        self.db = database
+        self.logger = logger
         self._setup_downloaders()
 
     def _setup_downloaders(self):
@@ -26,6 +34,7 @@ class RSSDownloader:
                 rpc_url=str(aria2_config.rpc),
                 secret=aria2_config.secret,
                 dir=aria2_config.dir,
+                logger=self.logger,
             )
         else:
             self.aria2 = None
@@ -38,42 +47,47 @@ class RSSDownloader:
                     host=str(qb_config.host),
                     username=qb_config.username,
                     password=qb_config.password,
+                    logger=self.logger,
                 )
             except Exception as e:
-                logger.warning(f"初始化 qBittorrent 客户端失败，错误: {e}")
-                self.qbittorrent = None
+                self.logger.error("初始化 qBittorrent 客户端失败，任务将无法下载。")
+                raise ConnectionError(f"无法连接到 qBittorrent: {e}") from e
         else:
             self.qbittorrent = None
 
         if not self.aria2 and not self.qbittorrent:
-            logger.warning("未配置任何下载器，无法下载内容")
+            self.logger.warning("未配置任何下载器，无法下载内容")
 
     def _send_to_downloader(
         self,
         item: dict[str, Any],
         downloader: Literal["aria2", "qbittorrent"],
         mode: Literal[0, 1] = 0,
-    ) -> bool:
+    ) -> None:
         """发送单个下载任务到指定下载器"""
         status = False
+        error_message = ""
 
-        if downloader == "aria2" and self.aria2:
-            result = self.aria2.add_link(str(item["download_url"]))
-            if "error" not in result:
-                status = True
+        try:
+            if downloader == "aria2" and self.aria2:
+                result = self.aria2.add_link(str(item["download_url"]))
+                if "error" in result:
+                    error_message = result["error"]
+                else:
+                    status = True
+            elif downloader == "qbittorrent" and self.qbittorrent:
+                success = self.qbittorrent.add_link(str(item["download_url"]))
+                if success:
+                    status = True
+                else:
+                    error_message = "qBittorrent API 返回失败"
+            else:
+                error_message = f"下载器 {downloader} 未配置或不可用"
 
-        elif downloader == "qbittorrent" and self.qbittorrent:
-            success = self.qbittorrent.add_link(str(item["download_url"]))
-            if success:
-                status = True
-
-        else:
-            logger.error(f"未配置 {downloader}，无法添加下载任务")
-
-        if status:
-            logger.info(f"下载任务添加成功 ({downloader}): {item['title']}")
-        else:
-            logger.error(f"下载任务添加失败 ({downloader}): {item['title']}")
+        except Exception as e:
+            self.logger.exception(f"与下载器 {downloader} 通信时发生意外错误")
+            error_message = str(e)
+            status = False
 
         # 记录到数据库
         record = DownloadRecord(
@@ -89,65 +103,67 @@ class RSSDownloader:
             mode=mode,
         )
         new_id = self.db.insert(record)
-        logger.debug(f"下载新记录: {new_id} - {item['title']}")
+        self.logger.debug(f"新下载记录: {new_id} - {item['title']}")
 
-        return status
+        if status:
+            self.logger.info(
+                f"下载任务添加成功 ({downloader}): {new_id} - {item['title']}"
+            )
+        else:
+            raise DownloaderError(f"任务添加失败 ({downloader}): {error_message}")
 
-    def redownload(self, id: int, downloader: Literal["aria2", "qbittorrent"]) -> bool:
+    def redownload(self, id: int, downloader: Literal["aria2", "qbittorrent"]) -> None:
         """重新下载指定 ID 的任务"""
         record = self.db.search_download_by_id(id)
         if not record:
-            logger.error(f"未找到 ID 为 {id} 的下载记录")
-            return False
+            raise ItemNotFoundError(f"未找到 ID 为 {id} 的下载记录")
 
         if not record.download_url:
-            logger.error(f"记录 ID 为 {id} 的下载记录没有下载链接")
-            return False
+            raise ValueError(f"记录 ID 为 {id} 的下载记录没有下载链接")
 
-        status = self._send_to_downloader(record.model_dump(), downloader, mode=1)
-        return status
+        self._send_to_downloader(record.model_dump(), downloader, mode=1)
 
     def process_feed(self, feed_name: str, feed_url: HttpUrl) -> tuple[int, int, int]:
         """处理单个RSS源，返回总数，匹配条目数和下载数"""
         success = 0
-
-        total, items = self.parser.parse_feed(feed_name, feed_url)
+        total_items, matched_items = self.parser.parse_feed(feed_name, feed_url)
         downloader = self.config.get_feed_downloader(feed_name)
 
-        for item in items:
+        for item in matched_items:
             # 检查是否已经下载过
             if self.db.is_downloaded(str(item.download_url)):
-                logger.info(f"跳过已下载项目: {item.title}")
+                self.logger.info(f"跳过已下载项目: {item.title}")
                 continue
 
             data = item.model_dump() | {"feed_name": feed_name, "feed_url": feed_url}
-            # 添加下载任务
-            status = self._send_to_downloader(data, downloader)
 
-            if status:
+            try:
+                # 添加下载任务
+                self._send_to_downloader(data, downloader)
                 success += 1
+            except DownloaderError as e:
+                self.logger.error(f"处理 '{item.title}' 失败: {e}")
+            except Exception as e:
+                self.logger.exception(f"下载时发生未知错误 (ID: {id}): {e}")
 
-        return total, len(items), success
+        return total_items, len(matched_items), success
 
     def run(self):
         """运行RSS下载器"""
-        total_count = total_parsed = totle_success = 0
+        total_count = total_mathed = totle_success = 0
         try:
             for feed in self.config.feeds:
-                logger.info(f"处理 RSS 源: {feed.name} ({feed.url})")
-                count, parsed, success = self.process_feed(feed.name, feed.url)
+                self.logger.info(f"处理 RSS 源: {feed.name} ({feed.url})")
+                count, matched, success = self.process_feed(feed.name, feed.url)
                 total_count += count
-                total_parsed += parsed
+                total_mathed += matched
                 totle_success += success
 
         except Exception as e:
-            logger.error(f"运行时发生错误: {e}")
+            self.logger.error(f"运行时发生错误: {e}")
         finally:
-            logger.info(
+            self.logger.info(
                 f"共获取到 {total_count} 个条目，"
-                f"匹配到 {total_parsed} 个条目。"
+                f"匹配到 {total_mathed} 个条目。"
                 f"成功添加 {totle_success} 个下载任务。"
             )
-
-
-rss_downloader = RSSDownloader()
