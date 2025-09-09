@@ -1,16 +1,14 @@
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 
-from .config import config
 from .logger import logger
 from .models import DownloadRecord
 
-DATABASE_FILE = "downloads.db"
-
 
 class Database:
-    def __init__(self):
-        self.db_path = config.config_path.parent / DATABASE_FILE
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
         self._init_db()
 
     def _init_db(self):
@@ -186,6 +184,3 @@ class Database:
             ]
 
             return results, total_count
-
-
-db = Database()
