@@ -3,6 +3,8 @@ from datetime import datetime
 
 from loguru import logger
 
+from .config import ConfigManager
+
 
 class InterceptHandler(logging.Handler):
     """拦截标准日志的处理器，将其重定向到loguru"""
@@ -24,15 +26,15 @@ class InterceptHandler(logging.Handler):
         )
 
 
-def setup_logger():
-    from .config import config
-
+def setup_logger(config: ConfigManager):
     """配置日志系统"""
-    # 设置日志目录
-    log_dir = config.config_path.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
+
+    log_config = config.get().log
+    log_level = log_config.level
 
     # 配置日志文件
+    log_dir = config.config_path.parent / "logs"
+    log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"rss_downloader_{datetime.now().strftime('%Y%m%d')}.log"
 
     # 移除默认的处理器
@@ -43,7 +45,7 @@ def setup_logger():
         lambda msg: print(msg, end=""),
         colorize=True,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        level=config.log_level,
+        level=log_level,
     )
 
     # 添加文件输出
@@ -53,7 +55,7 @@ def setup_logger():
         retention=5,  # 保留最近5个日志文件
         compression="zip",  # 压缩旧的日志文件
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        level=config.log_level,
+        level=log_level,
         encoding="utf-8",
     )
 
@@ -61,7 +63,3 @@ def setup_logger():
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
     return logger
-
-
-# 全局日志配置
-logger = setup_logger()

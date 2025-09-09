@@ -2,13 +2,13 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from .logger import logger
 from .models import DownloadRecord
 
 
 class Database:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, logger):
         self.db_path = db_path
+        self.logger = logger
         self._init_db()
 
     def _init_db(self):
@@ -81,7 +81,7 @@ class Database:
                 return cursor.lastrowid  # type: ignore
 
         except Exception as e:
-            logger.error(f"添加下载记录失败: {e}")
+            self.logger.error(f"添加下载记录失败: {e}")
             return 0
 
     def is_downloaded(self, url: str) -> bool:
@@ -173,7 +173,9 @@ class Database:
             cursor.execute(count_query, count_params)
             total_count = cursor.fetchone()[0]
 
-            logger.debug(f"查询下载记录，SQL: {' '.join(query_parts)}, 参数: {params}")
+            self.logger.debug(
+                f"查询下载记录，SQL: {' '.join(query_parts)}, 参数: {params}"
+            )
 
             # 获取数据
             query_parts.append("ORDER BY download_time DESC LIMIT ? OFFSET ?")

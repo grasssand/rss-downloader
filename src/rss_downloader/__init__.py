@@ -4,13 +4,14 @@ from importlib.metadata import version
 
 __version__ = version("rss_downloader")
 
+DATABASE_FILE_NAME = "downloads.db"
+
 
 def main() -> None:
     import argparse
 
     from .config import config
-    from .logger import logger
-    from .main import rss_downloader
+    from .services import AppServices
 
     parser = argparse.ArgumentParser(description="RSS下载器 - 从RSS源自动下载内容")
     parser.add_argument("-w", "--web", action="store_true", help="启动 Web 界面")
@@ -19,13 +20,16 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        # 初始化配置
         config.initialize(cli_force_web=args.web)
+        # 创建核心服务容器
+        db_path = config.config_path.parent / DATABASE_FILE_NAME
+        services = AppServices(config=config, db_path=db_path)
+        logger = services.logger
 
         # 重置数据库
         if args.reset_db:
-            from .database import db
-
-            db.reset()
+            services.db.reset()
             logger.warning("数据库已重置")
 
         # 如果配置了启用Web界面，则同时启动Web服务器
@@ -35,7 +39,7 @@ def main() -> None:
 
             import uvicorn
 
-            from .web import app
+            from .app import create_app
 
             logger.info(f"启动 Web 界面: http://{config.web.host}:{config.web.port}")
 
@@ -43,7 +47,7 @@ def main() -> None:
             def run_downloader_periodically():
                 while True:
                     try:
-                        rss_downloader.run()
+                        services.downloader.run()
                     except Exception:
                         logger.exception("下载器后台任务运行时发生错误")
 
@@ -55,16 +59,17 @@ def main() -> None:
                 daemon=True,
             ).start()
 
+            web_app = create_app(services=services)
             # 启动Web服务器（主线程）
             uvicorn.run(
-                app, host=config.web.host, port=config.web.port, log_config=None
+                web_app, host=config.web.host, port=config.web.port, log_config=None
             )
 
         else:
             # 仅启动下载器
-            rss_downloader.run()
+            services.downloader.run()
 
     except KeyboardInterrupt:
-        logger.info("程序被用户中断")
+        logger.info("程序被用户中断")  # type: ignore
     except Exception:
-        logger.exception("程序运行时发生错误")
+        logger.exception("程序运行时发生错误")  # type: ignore

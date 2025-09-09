@@ -3,14 +3,19 @@ from urllib.parse import urljoin
 
 import requests
 
-from .logger import logger
-
 
 class Aria2Client:
-    def __init__(self, rpc_url: str, secret: str | None = None, dir: str | None = None):
+    def __init__(
+        self,
+        rpc_url: str,
+        secret: str | None = None,
+        dir: str | None = None,
+        logger=None,
+    ):
         self.rpc_url = rpc_url
         self.secret = secret
         self.dir = dir
+        self.logger = logger
 
     def _prepare_request(
         self, method: str, params: list[Any] | None = None
@@ -47,10 +52,12 @@ class Aria2Client:
             return response.json()
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"Aria2 请求失败: {e}")
+            if self.logger:
+                self.logger.error(f"Aria2 请求失败: {e}")
             return {"error": str(e)}
         except Exception as e:
-            logger.exception(f"Aria2 发生未知错误: {e}")
+            if self.logger:
+                self.logger.exception(f"Aria2 发生未知错误: {e}")
             return {"error": str(e)}
 
     def get_version(self) -> dict[str, Any]:
@@ -61,30 +68,39 @@ class Aria2Client:
             response.raise_for_status()
             return response.json()
         except Exception as e:
-            logger.error(f"获取 Aria2 版本失败: {e}")
+            if self.logger:
+                self.logger.error(f"获取 Aria2 版本失败: {e}")
             return {"error": {"message": str(e)}}
 
 
 class QBittorrentClient:
     def __init__(
-        self, host: str, username: str | None = None, password: str | None = None
+        self,
+        host: str,
+        username: str | None = None,
+        password: str | None = None,
+        logger=None,
     ):
         self.base_url = host
         self.session = requests.Session()
+        self.logger = logger
 
         if username and password:
             try:
                 self._login(username, password)
-                logger.info("qBittorrent 登录成功")
+                if self.logger:
+                    self.logger.info("qBittorrent 登录成功")
             except Exception as e:
-                logger.error(f"qBittorrent 登录失败: {e}")
+                if self.logger:
+                    self.logger.error(f"qBittorrent 登录失败: {e}")
                 raise ConnectionError(
                     "无法登录到 qBittorrent，请检查配置或服务状态"
                 ) from e
         else:
-            logger.info(
-                "qBittorrent 未配置用户名和密码，将以游客模式连接 (可能无法添加任务)"
-            )
+            if self.logger:
+                self.logger.info(
+                    "qBittorrent 未配置用户名和密码，将以游客模式连接 (可能无法添加任务)"
+                )
 
     def _login(self, username: str, password: str):
         """登录到qBittorrent WebUI"""
@@ -96,12 +112,15 @@ class QBittorrentClient:
             response.raise_for_status()
             if response.text.strip().lower() != "ok.":
                 raise Exception(f"登录认证失败，响应: {response.text}")
-            logger.info("qBittorrent 登录成功")
+            if self.logger:
+                self.logger.info("qBittorrent 登录成功")
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"qBittorrent 登录请求失败: {e}")
+            if self.logger:
+                self.logger.error(f"qBittorrent 登录请求失败: {e}")
         except Exception as e:
-            logger.error(f"qBittorrent 登录失败: {e}")
+            if self.logger:
+                self.logger.error(f"qBittorrent 登录失败: {e}")
 
     def add_link(self, link: str) -> bool:
         """添加下载任务"""
@@ -113,14 +132,19 @@ class QBittorrentClient:
             if response.text.strip().lower() == "ok.":
                 return True
             else:
-                logger.error(f"qBittorrent 添加任务失败，响应: {response.text}")
+                if self.logger:
+                    self.logger.error(
+                        f"qBittorrent 添加任务失败，响应: {response.text}"
+                    )
                 return False
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"qBittorrent 添加任务请求失败: {e}")
+            if self.logger:
+                self.logger.error(f"qBittorrent 添加任务请求失败: {e}")
             return False
         except Exception as e:
-            logger.exception(f"qBittorrent 添加任务时发生未知错误: {e}")
+            if self.logger:
+                self.logger.exception(f"qBittorrent 添加任务时发生未知错误: {e}")
             return False
 
     def get_version(self) -> dict[str, str]:
@@ -131,5 +155,6 @@ class QBittorrentClient:
             response.raise_for_status()
             return {"version": response.text}
         except Exception as e:
-            logger.error(f"获取 qBittorrent 版本失败: {e}")
+            if self.logger:
+                self.logger.error(f"获取 qBittorrent 版本失败: {e}")
             return {"error": str(e)}

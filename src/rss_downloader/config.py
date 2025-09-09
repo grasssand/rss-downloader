@@ -31,6 +31,7 @@ class ConfigManager:
         self._config = self._load_or_create()
         self._last_mtime = self.config_path.stat().st_mtime
         self._web_mode_enabled = False
+        self.logger = None
 
     def _find_config_path(self) -> Path:
         search_paths = [
@@ -83,15 +84,18 @@ class ConfigManager:
         merged_config = _deep_merge(default_dump, user_data)
         return Config.model_validate(merged_config)
 
+    def set_logger(self, logger) -> None:
+        self.logger = logger
+
     def get(self) -> Config:
         with self._lock:
             return self._config
 
     def update(self, new_data: dict[str, Any]):
         """更新配置并写回文件"""
-        from .logger import logger
 
-        logger.debug(f"尝试更新配置: {new_data}")
+        if self.logger:
+            self.logger.debug(f"尝试更新配置: {new_data}")
 
         with self._lock:
             backup_config_dump = self._config.model_dump(mode="json")
@@ -107,7 +111,8 @@ class ConfigManager:
                     )
 
             except (ValidationError, OSError) as e:
-                logger.error(f"配置更新失败，正在回滚... 错误: {e}")
+                if self.logger:
+                    self.logger.error(f"配置更新失败，正在回滚... 错误: {e}")
                 self._config = Config.model_validate(backup_config_dump)
                 raise e
 
@@ -173,7 +178,6 @@ class ConfigManager:
 
     def _start_watcher(self):
         """启动后台线程监控文件变化"""
-        from .logger import logger
 
         def watch():
             while True:
@@ -182,13 +186,17 @@ class ConfigManager:
                     if self.config_path.exists():
                         mtime = self.config_path.stat().st_mtime
                         if mtime > self._last_mtime:
-                            logger.info(f"配置文件已重新加载: {self.config_path}")
                             with self._lock:
                                 self._config = self._read_only_load()
                                 self._last_mtime = mtime
                                 self._config_version += 1
+                            if self.logger:
+                                self.logger.info(
+                                    f"配置文件已重新加载: {self.config_path}"
+                                )
                 except Exception:
-                    logger.exception("配置文件监控线程出错")
+                    if self.logger:
+                        self.logger.exception("配置文件监控线程出错")
 
         threading.Thread(target=watch, daemon=True).start()
 
