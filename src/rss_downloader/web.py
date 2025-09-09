@@ -1,202 +1,223 @@
 from datetime import datetime, time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError, model_validator
 
-from .config import config
-from .database import db
-from .downloaders import (
-    Aria2Client,
-    QBittorrentClient,
+from .config import ConfigManager
+from .database import Database
+from .downloaders import Aria2Client, QBittorrentClient
+from .main import (
+    DownloaderError,
+    ItemNotFoundError,
+    RSSDownloader,
 )
-from .logger import logger
-from .main import rss_downloader
-from .models import Aria2Config, Config, QBittorrentConfig
+from .models import Aria2Config, Config, ConfigUpdatePayload, QBittorrentConfig
 
-app = FastAPI(title="RSS下载器管理界面")
+router = APIRouter()
 
 # 设置静态文件和模板
-templates_dir = Path(__file__).parent / "templates"
-static_dir = Path(__file__).parent / "static"
-
-templates = Jinja2Templates(directory=str(templates_dir))
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
-def format_datetime(value) -> str:
+def format_datetime(dt: datetime | None, fmt: str | None = None) -> str:
     """格式化日期时间为字符串"""
-    if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+    if dt is None:
+        return ""
 
-    if isinstance(value, str):
-        try:
-            dt = datetime.fromisoformat(value)
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError):
-            return value
+    if fmt is None:
+        fmt = "%Y-%m-%d %H:%M:%S"
 
-    return str(value)
+    return dt.strftime(fmt)
 
 
 templates.env.filters["strftime"] = format_datetime
 
 
-@app.get("/", response_class=HTMLResponse)
+def get_config_manager(request: Request) -> ConfigManager:
+    return request.app.state.config
+
+
+def get_logger(request: Request):
+    return request.app.state.logger
+
+
+def get_db(request: Request) -> Database:
+    return request.app.state.db
+
+
+def get_downloader(request: Request) -> RSSDownloader:
+    return request.app.state.downloader
+
+
+class SearchFilters(BaseModel):
+    """封装下载记录搜索查询的参数模型"""
+
+    page: Annotated[int, Query(description="页码", ge=1)] = 1
+    limit: Annotated[int, Query(description="每页数量", ge=1, le=100)] = 20
+    title: Annotated[str | None, Query(description="标题关键词")] = None
+    feed_name: Annotated[str | None, Query(description="RSS源名称")] = None
+    downloader: Annotated[
+        str | None, Query(description="下载器", pattern="^(aria2|qbittorrent)?$")
+    ] = None
+    status: Annotated[
+        int | None, Query(description="下载状态 (1成功, 0失败)", ge=0, le=1)
+    ] = None
+    mode: Annotated[
+        int | None, Query(description="下载模式 (1手动, 0自动)", ge=0, le=1)
+    ] = None
+    published_start_time: Annotated[
+        datetime | None, Query(description="发布起始时间")
+    ] = None
+    published_end_time: Annotated[
+        datetime | None, Query(description="发布结束时间")
+    ] = None
+    download_start_time: Annotated[
+        datetime | None, Query(description="下载起始时间")
+    ] = None
+    download_end_time: Annotated[datetime | None, Query(description="下载结束时间")] = (
+        None
+    )
+
+    @model_validator(mode="after")
+    def fix_date_ranges(self) -> "SearchFilters":
+        """动修正不合理的日期范围，并将结束日期调整为当天末尾"""
+        if (
+            self.published_start_time
+            and self.published_end_time
+            and self.published_start_time > self.published_end_time
+        ):
+            self.published_start_time, self.published_end_time = (
+                self.published_end_time,
+                self.published_start_time,
+            )
+
+        if (
+            self.download_start_time
+            and self.download_end_time
+            and self.download_start_time > self.download_end_time
+        ):
+            self.download_start_time, self.download_end_time = (
+                self.download_end_time,
+                self.download_start_time,
+            )
+
+        if self.published_end_time:
+            self.published_end_time = datetime.combine(
+                self.published_end_time.date(), time.max
+            )
+
+        if self.download_end_time:
+            self.download_end_time = datetime.combine(
+                self.download_end_time.date(), time.max
+            )
+
+        return self
+
+
+class RedownloadRequest(BaseModel):
+    """重新下载任务的请求体模型"""
+
+    id: int
+    downloader: Literal["aria2", "qbittorrent"]
+
+
+@router.get("/", response_class=HTMLResponse)
 async def index(
     request: Request,
-    page: Annotated[int, Query(ge=1)] = 1,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    title: str | None = None,
-    feed_name: str | None = None,
-    downloader: Annotated[str | None, Query(pattern="^(aria2|qbittorrent)?$")] = None,
-    status: Annotated[int | None, Query(ge=0, le=1)] = None,
-    mode: Annotated[int | None, Query(ge=0, le=1)] = None,
-    published_start_time: datetime | None = None,
-    published_end_time: datetime | None = None,
-    download_start_time: datetime | None = None,
-    download_end_time: datetime | None = None,
+    filters: Annotated[SearchFilters, Depends()],
+    db: Annotated[Database, Depends(get_db)],
 ):
     """主页，展示下载记录"""
-    offset = (page - 1) * limit
+    offset = (filters.page - 1) * filters.limit
 
-    # 自动交换不合理的日期范围
-    if (
-        published_start_time
-        and published_end_time
-        and (published_start_time > published_end_time)
-    ):
-        published_start_time, published_end_time = (
-            published_end_time,
-            published_start_time,
-        )
-    if (
-        download_start_time
-        and download_end_time
-        and (download_start_time > download_end_time)
-    ):
-        download_start_time, download_end_time = (
-            download_end_time,
-            download_start_time,
-        )
-    if published_end_time:
-        published_end_time = datetime.combine(published_end_time.date(), time.max)
-    if download_end_time:
-        download_end_time = datetime.combine(download_end_time.date(), time.max)
+    # 获取数据
+    downloads, total = db.search_downloads(
+        **filters.model_dump(exclude={"page", "limit"}),
+        limit=filters.limit,
+        offset=offset,
+    )
 
-    try:
-        # 获取数据
-        downloads, total = db.search_downloads(
-            title=title,
-            feed_name=feed_name,
-            downloader=downloader,
-            status=status,
-            mode=mode,
-            published_start_time=published_start_time,
-            published_end_time=published_end_time,
-            download_start_time=download_start_time,
-            download_end_time=download_end_time,
-            limit=limit,
-            offset=offset,
-        )
+    # 计算分页
+    total_pages = (total + filters.limit - 1) // filters.limit
 
-        # 计算分页
-        total_pages = (total + limit - 1) // limit
-
-        query_params = {
-            "title": title,
-            "feed_name": feed_name,
-            "downloader": downloader,
-            "status": status,
-            "mode": mode,
-            "published_start_time": published_start_time,
-            "published_end_time": published_end_time,
-            "download_start_time": download_start_time,
-            "download_end_time": download_end_time,
-            "page": page,
-            "limit": limit,
-        }
-
-        return templates.TemplateResponse(
-            "index.html",
-            {
-                "request": request,
-                "downloads": downloads,
-                "page": page,
-                "offset": offset,
-                "total": total,
-                "total_pages": total_pages,
-                "query": query_params,
-            },
-        )
-    except Exception as e:
-        logger.exception("获取下载记录失败")
-        return templates.TemplateResponse(
-            "error.html", {"request": request, "message": str(e)}
-        )
+    return templates.TemplateResponse(
+        "index.html",
+        {
+            "request": request,
+            "downloads": downloads,
+            "page": filters.page,
+            "offset": offset,
+            "total": total,
+            "total_pages": total_pages,
+            "query": filters,
+        },
+    )
 
 
-@app.post("/redownload")
-async def redownload_item(request: Request):
+@router.post("/redownload")
+async def redownload_item(
+    payload: RedownloadRequest,
+    downloader: Annotated[RSSDownloader, Depends(get_downloader)],
+    logger: Annotated[Any, Depends(get_logger)],
+):
     """API: 重新下载一个任务"""
     try:
-        data = await request.json()
-        record_id = data.get("id")
-        downloader = data.get("downloader")
+        downloader.redownload(id=payload.id, downloader=payload.downloader)
+        return {"status": "success", "message": "任务已成功发送到下载器"}
 
-        if not all([record_id, downloader]):
-            raise HTTPException(status_code=400, detail="缺少参数 id 或 downloader")
-
-        success = rss_downloader.redownload(id=int(record_id), downloader=downloader)
-
-        if success:
-            return {"status": "success", "message": "任务已成功发送到下载器"}
-        else:
-            logger.error(
-                f"发送任务到 {downloader} 失败 (ID: {record_id})，请检查下载器配置和日志。"
-            )
-            raise HTTPException(
-                status_code=500, detail="任务发送失败，请检查下载器配置和日志"
-            )
-    except HTTPException as e:
-        raise e
+    except ItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except DownloaderError as e:
+        raise HTTPException(status_code=500, detail=f"任务发送失败: {e}") from e
     except Exception as e:
-        logger.exception("重新下载时发生意外错误")
-        raise HTTPException(status_code=500, detail=f"服务器发生意外错误: {e}")
+        logger.exception(f"重新下载时发生未知错误 (ID: {payload.id})")
+        raise HTTPException(
+            status_code=500, detail="发生未知服务器错误，请查看日志"
+        ) from e
 
 
-@app.get("/config", response_model=Config)
-def get_config():
+@router.get("/config", response_model=Config)
+def get_config(config: Annotated[ConfigManager, Depends(get_config_manager)]):
     """API：获取配置"""
     return config.get()
 
 
-@app.put("/config")
-def update_config(new_cfg: Config):
+@router.put("/config")
+def update_config(
+    payload: ConfigUpdatePayload,
+    config: Annotated[ConfigManager, Depends(get_config_manager)],
+    logger: Annotated[Any, Depends(get_logger)],
+):
     """API：更新配置"""
     try:
-        config.update(new_cfg.model_dump())
-        return {"status": "ok"}
+        update_data = payload.model_dump(exclude_unset=True)
+        config.update(update_data)
+        return {"status": "ok", "message": "配置已成功保存！"}
     except ValidationError as e:
         logger.error(f"配置验证失败: {e.errors()}")
-        raise HTTPException(status_code=422, detail=e.errors())
+        raise HTTPException(status_code=422, detail=e.errors()) from e
     except Exception as e:
-        logger.error(f"配置更新失败: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"配置更新失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"内部服务器错误: {e}") from e
 
 
-@app.get("/config-page", response_class=HTMLResponse)
+@router.get("/config-page", response_class=HTMLResponse)
 def config_page(request: Request):
     """配置页面"""
     return templates.TemplateResponse("config.html", {"request": request})
 
 
-@app.post("/test-downloader/aria2")
-async def test_aria2_connection(data: Aria2Config):
+@router.post("/test-downloader/aria2")
+async def test_aria2_connection(
+    data: Aria2Config,
+    logger: Annotated[Any, Depends(get_logger)],
+):
     """测试 Aria2 连接"""
     try:
         if not data.rpc:
@@ -206,19 +227,24 @@ async def test_aria2_connection(data: Aria2Config):
         result = client.get_version()
         if "error" in result:
             raise ValueError(result["error"]["message"])
+
         return {
             "status": "success",
             "version": result.get("result", {}).get("version", "未知"),
         }
+
     except (ValidationError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("测试 Aria2 连接失败")
-        raise HTTPException(status_code=500, detail=f"连接失败: {e}")
+        raise HTTPException(status_code=500, detail=f"连接失败: {e}") from e
 
 
-@app.post("/test-downloader/qbittorrent")
-async def test_qbittorrent_connection(data: QBittorrentConfig):
+@router.post("/test-downloader/qbittorrent")
+async def test_qbittorrent_connection(
+    data: QBittorrentConfig,
+    logger: Annotated[Any, Depends(get_logger)],
+):
     """测试 qBittorrent 连接"""
     try:
         if not data.host:
@@ -230,17 +256,11 @@ async def test_qbittorrent_connection(data: QBittorrentConfig):
         result = client.get_version()
         if "error" in result:
             raise ValueError(result["error"])
+
         return {"status": "success", "version": result["version"]}
+
     except (ValidationError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception("测试 qBittorrent 连接失败")
-        raise HTTPException(status_code=500, detail=f"连接失败: {e}")
-
-
-def run_web_server(host: str = "127.0.0.1", port: int = 8000):
-    """运行Web服务器"""
-    import uvicorn
-
-    logger.info(f"启动Web服务器在 http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_config=None)
+        raise HTTPException(status_code=500, detail=f"连接失败: {e}") from e

@@ -106,6 +106,16 @@ class Config(BaseModel):
         return cls()
 
 
+class ConfigUpdatePayload(BaseModel):
+    """定义了允许通过 API 更新的配置字段"""
+
+    log: LogConfig | None = None
+    web: WebConfig | None = None
+    aria2: Aria2Config | None = None
+    qbittorrent: QBittorrentConfig | None = None
+    feeds: list[FeedConfig] | None = None
+
+
 # ==================================
 # downloads 数据表模型
 # ==================================

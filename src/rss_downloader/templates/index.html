@@ -5,6 +5,13 @@
 {% block header %}下载记录{% endblock %}
 
 {% block content %}
+<div id="loading-overlay" class="hidden fixed inset-0 bg-white/70 z-50 flex items-center justify-center">
+    <svg class="animate-spin h-8 w-8 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+</div>
+
 <form method="get" class="mb-6 p-4 bg-white border border-zinc-200 rounded-lg shadow-sm">
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <input type="text" name="title" placeholder="标题关键词" value="{{ query.title or '' }}"
@@ -61,7 +68,7 @@
             <tr class="text-left text-zinc-600">
                 <th class="px-3 py-2 border-b border-zinc-200 w-12 text-center">#</th>
                 <th class="px-3 py-2 border-b border-zinc-200 min-w-[22rem]">标题</th>
-                <th class="px-3 py-2 border-b border-zinc-200">RSS源</th>
+                <th class="px-3 py-2 border-b border-zinc-200 w-24">RSS源</th>
                 <th class="px-3 py-2 border-b border-zinc-200 min-w-[10rem]">发布时间</th>
                 <th class="px-3 py-2 border-b border-zinc-200 w-24 text-center">下载器</th>
                 <th class="px-3 py-2 border-b border-zinc-200 w-20 text-center">模式</th>
@@ -147,18 +154,43 @@
         {% endif %}
     </div>
 </div>
+
+<div id="toast" class="hidden fixed top-15 left-1/2 -translate-x-1/2 text-white px-5 py-3 rounded-md shadow-lg text-sm font-medium">
+    <span id="toast-message"></span>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// ===== “发送到下载器”按钮的 API 调用函数 =====
-function sendToDownloader(type, title, recordId) {
-    const confirmation = confirm(`确定要将任务发送到 ${type} 吗？\n\n${title}`);
+document.addEventListener("DOMContentLoaded", () => {
+    const loadingOverlay = document.getElementById("loading-overlay");
 
-    if (confirmation) {
-        // 显示一个简单的加载提示
-        const originalText = document.body.innerText;
-        document.body.insertAdjacentHTML('beforeend', '<div id="action-loading" class="fixed inset-0 bg-white/70 z-50 flex items-center justify-center"><p class="text-lg font-semibold">正在发送...</p></div>');
+    // ===== Loading & Toast 工具函数 =====
+    function showLoading() { loadingOverlay.classList.remove("hidden"); }
+    function hideLoading() { loadingOverlay.classList.add("hidden"); }
+    function showToast(text, type) {
+        const msgBox = document.getElementById("toast");
+        if (!msgBox) return;
+        document.getElementById("toast-message").textContent = text;
+        msgBox.classList.remove("bg-green-500", "bg-red-500", "bg-yellow-500", "bg-zinc-700");
+        const typeClasses = {
+            success: "bg-green-500",
+            error: "bg-red-500",
+            warning: "bg-yellow-500"
+        };
+        msgBox.classList.add(typeClasses[type] || "bg-zinc-700");
+        msgBox.classList.remove("hidden");
+        setTimeout(() => msgBox.classList.add("hidden"), 3000);
+    }
+
+    // ===== “发送到下载器”按钮的 API 调用函数 =====
+    // 将函数挂载到 window 对象上，以便 onclick 可以调用
+    window.sendToDownloader = function(type, title, recordId) {
+        if (!confirm(`确定要将任务发送到 ${type} 吗？\n\n${title}`)) {
+            return;
+        }
+
+        showLoading();
 
         fetch('/redownload', {
             method: 'POST',
@@ -168,48 +200,37 @@ function sendToDownloader(type, title, recordId) {
                 downloader: type
             })
         })
-        .then(res => {
-            // 检查响应是否成功，否则解析错误信息并抛出
-            if (!res.ok) {
-                return res.json().then(err => { throw new Error(err.detail || '未知服务器错误'); });
+        .then(res => res.json().then(data => ({ ok: res.ok, body: data })))
+        .then(({ ok, body }) => {
+            hideLoading();
+            if (ok) {
+                showToast(body.message || '操作成功！', 'success');
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                throw new Error(body.detail || '未知服务器错误');
             }
-            return res.json();
-        })
-        .then(data => {
-            alert(data.message || '操作成功！');
         })
         .catch(err => {
-            // 移除加载提示
-            document.getElementById('action-loading')?.remove();
-            // 显示错误
-            alert(`操作失败: ${err.message}`);
-        })
-        .finally(() => window.location.reload());
+            hideLoading();
+            showToast(`${err.message}`, 'error');
+            setTimeout(() => window.location.reload(), 1500);
+        });
     }
-}
 
-// ===== 页面加载后执行的脚本 =====
-document.addEventListener('DOMContentLoaded', function() {
+    // ===== 清理表单空值并提交 =====
     const form = document.querySelector('form');
     if (form) {
         form.addEventListener('submit', function(event) {
-            // 1. 阻止表单的默认提交行为
             event.preventDefault();
-
-            // 2. 创建 URLSearchParams 对象来构建新的查询字符串
             const formData = new FormData(form);
             const params = new URLSearchParams();
-
-            // 3. 遍历所有表单字段
             for (const [key, value] of formData.entries()) {
-                // 4. 只将值不为空的字段添加到新的查询参数中
                 if (value) {
                     params.append(key, value);
                 }
             }
-
-            // 5. 将浏览器重定向到清理后的、干净的 URL
-            window.location.search = params.toString();
+            // 使用 window.location.assign 来跳转，效果与直接修改 search 一样
+            window.location.assign(window.location.pathname + '?' + params.toString());
         });
     }
 });
