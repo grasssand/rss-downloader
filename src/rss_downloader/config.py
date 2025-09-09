@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from pydantic import ValidationError
 
 from .models import Aria2Config, Config, FeedConfig, QBittorrentConfig, WebConfig
 
@@ -48,33 +49,39 @@ class ConfigManager:
 
     def _load_or_create(self) -> Config:
         """加载或创建配置文件"""
-        default_cfg = Config.default()
+        user_data = {}
         if self.config_path.exists():
             with self.config_path.open("r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            merged = _deep_merge(default_cfg.model_dump(), data)
-            if merged != data:
-                with self.config_path.open("w", encoding="utf-8") as f:
-                    yaml.safe_dump(
-                        merged,
-                        f,
-                        allow_unicode=True,
-                        sort_keys=False,
-                        default_flow_style=False,
-                    )
-            return Config.model_validate(merged)
+                user_data = yaml.safe_load(f) or {}
 
-        else:
+        default_dump = Config.model_validate({}).model_dump(mode="json")
+        merged_config = _deep_merge(default_dump, user_data)
+
+        config_obj = Config.model_validate(merged_config)
+
+        # 仅当文件不存在或内容不完整时才回写
+        if not self.config_path.exists() or user_data != merged_config:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with self.config_path.open("w", encoding="utf-8") as f:
                 yaml.safe_dump(
-                    default_cfg.model_dump(),
+                    config_obj.model_dump(mode="json"),
                     f,
                     allow_unicode=True,
                     sort_keys=False,
                     default_flow_style=False,
                 )
-            return default_cfg
+        return config_obj
+
+    def _read_only_load(self) -> Config:
+        """一个只读的加载方法供热重载使用，避免回写"""
+        user_data = {}
+        if self.config_path.exists():
+            with self.config_path.open("r", encoding="utf-8") as f:
+                user_data = yaml.safe_load(f) or {}
+
+        default_dump = Config.model_validate({}).model_dump(mode="json")
+        merged_config = _deep_merge(default_dump, user_data)
+        return Config.model_validate(merged_config)
 
     def get(self) -> Config:
         with self._lock:
@@ -87,21 +94,22 @@ class ConfigManager:
         logger.debug(f"尝试更新配置: {new_data}")
 
         with self._lock:
-            current_dump = self._config.model_dump(mode="json")
+            backup_config_dump = self._config.model_dump(mode="json")
+            merged_for_validation = _deep_merge(backup_config_dump, new_data)
             try:
-                merged = _deep_merge(current_dump, new_data)
-                self._config = Config.model_validate(merged)
+                self._config = Config.model_validate(merged_for_validation)
                 with self.config_path.open("w", encoding="utf-8") as f:
                     yaml.safe_dump(
                         self._config.model_dump(mode="json"),
                         f,
                         allow_unicode=True,
                         sort_keys=False,
-                        default_flow_style=False,
                     )
-            except Exception as e:
-                logger.exception(f"更新配置文件时发生错误: {e}")
-                self._config = Config.model_validate(current_dump)
+
+            except (ValidationError, OSError) as e:
+                logger.error(f"配置更新失败，正在回滚... 错误: {e}")
+                self._config = Config.model_validate(backup_config_dump)
+                raise e
 
     def initialize(self, cli_force_web: bool = False):
         """根据命令行参数或配置文件启用配置热重载"""
@@ -169,17 +177,18 @@ class ConfigManager:
 
         def watch():
             while True:
+                time.sleep(5)
                 try:
-                    mtime = self.config_path.stat().st_mtime
-                    if mtime != self._last_mtime:
-                        with self._lock:
-                            self._config = self._load_or_create()
-                            self._last_mtime = mtime
-                            self._config_version += 1  # 配置重载时，版本号+1
-                        logger.info(f"配置文件已重新加载: {self.config_path}")
-                except FileNotFoundError:
-                    pass
-                time.sleep(5)  # 检查间隔
+                    if self.config_path.exists():
+                        mtime = self.config_path.stat().st_mtime
+                        if mtime > self._last_mtime:
+                            logger.info(f"配置文件已重新加载: {self.config_path}")
+                            with self._lock:
+                                self._config = self._read_only_load()
+                                self._last_mtime = mtime
+                                self._config_version += 1
+                except Exception:
+                    logger.exception("配置文件监控线程出错")
 
         threading.Thread(target=watch, daemon=True).start()
 
