@@ -5,6 +5,7 @@ import feedparser
 from pydantic import HttpUrl, ValidationError
 
 from .config import ConfigManager
+from .logger import LoggerProtocol
 from .models import ENTRY_PARSER_MAP, ParsedItem
 
 
@@ -13,7 +14,7 @@ def _compile_patterns(
     feed_name: str,
     config_version: int,
     patterns: tuple[str, ...],
-    logger,
+    logger: LoggerProtocol,
 ) -> list[re.Pattern]:
     """获取并编译指定RSS源的过滤规则"""
     logger.debug(f"编译过滤规则: {feed_name} (version {config_version})")
@@ -21,7 +22,7 @@ def _compile_patterns(
 
 
 class RSSParser:
-    def __init__(self, config: ConfigManager, logger):
+    def __init__(self, config: ConfigManager, logger: LoggerProtocol):
         self.config = config
         self.logger = logger
 

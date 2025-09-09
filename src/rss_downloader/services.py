@@ -2,7 +2,7 @@ from pathlib import Path
 
 from .config import ConfigManager
 from .database import Database
-from .logger import setup_logger
+from .logger import LoggerProtocol, setup_logger
 from .main import RSSDownloader
 
 
@@ -13,7 +13,7 @@ class AppServices:
         self.config = config
 
         # 创建实例
-        self.logger = setup_logger(config=self.config)
+        self.logger: LoggerProtocol = setup_logger(config=self.config)  # type: ignore
         self.config.set_logger(self.logger)
 
         self.db: Database = Database(db_path=db_path, logger=self.logger)

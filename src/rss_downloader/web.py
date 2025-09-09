@@ -1,6 +1,6 @@
 from datetime import datetime, time
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError, model_validator
 from .config import ConfigManager
 from .database import Database
 from .downloaders import Aria2Client, QBittorrentClient
+from .logger import LoggerProtocol
 from .main import (
     DownloaderError,
     ItemNotFoundError,
@@ -41,7 +42,7 @@ def get_config_manager(request: Request) -> ConfigManager:
     return request.app.state.config
 
 
-def get_logger(request: Request):
+def get_logger(request: Request) -> LoggerProtocol:
     return request.app.state.logger
 
 
@@ -162,7 +163,7 @@ async def index(
 async def redownload_item(
     payload: RedownloadRequest,
     downloader: Annotated[RSSDownloader, Depends(get_downloader)],
-    logger: Annotated[Any, Depends(get_logger)],
+    logger: Annotated[LoggerProtocol, Depends(get_logger)],
 ):
     """API: 重新下载一个任务"""
     try:
@@ -192,7 +193,7 @@ def get_config(config: Annotated[ConfigManager, Depends(get_config_manager)]):
 def update_config(
     payload: ConfigUpdatePayload,
     config: Annotated[ConfigManager, Depends(get_config_manager)],
-    logger: Annotated[Any, Depends(get_logger)],
+    logger: Annotated[LoggerProtocol, Depends(get_logger)],
 ):
     """API：更新配置"""
     try:
@@ -216,14 +217,14 @@ def config_page(request: Request):
 @router.post("/test-downloader/aria2")
 async def test_aria2_connection(
     data: Aria2Config,
-    logger: Annotated[Any, Depends(get_logger)],
+    logger: Annotated[LoggerProtocol, Depends(get_logger)],
 ):
     """测试 Aria2 连接"""
     try:
         if not data.rpc:
             raise ValueError("RPC 地址不能为空")
 
-        client = Aria2Client(rpc_url=str(data.rpc), secret=data.secret)
+        client = Aria2Client(logger=logger, rpc_url=str(data.rpc), secret=data.secret)
         result = client.get_version()
         if "error" in result:
             raise ValueError(result["error"]["message"])
@@ -243,7 +244,7 @@ async def test_aria2_connection(
 @router.post("/test-downloader/qbittorrent")
 async def test_qbittorrent_connection(
     data: QBittorrentConfig,
-    logger: Annotated[Any, Depends(get_logger)],
+    logger: Annotated[LoggerProtocol, Depends(get_logger)],
 ):
     """测试 qBittorrent 连接"""
     try:
@@ -251,7 +252,10 @@ async def test_qbittorrent_connection(
             raise ValueError("Host 不能为空")
 
         client = QBittorrentClient(
-            host=str(data.host), username=data.username, password=data.password
+            logger=logger,
+            host=str(data.host),
+            username=data.username,
+            password=data.password,
         )
         result = client.get_version()
         if "error" in result:

@@ -1,9 +1,49 @@
 import logging
 from datetime import datetime
+from typing import Any, Protocol
 
 from loguru import logger
 
-from .config import ConfigManager
+
+class LoggerProtocol(Protocol):
+    """定义了一个 Logger 对象应该具备的方法，用于类型提示。"""
+
+    def trace(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def success(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def critical(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+    def exception(self, message: str, *args: Any, **kwargs: Any) -> None: ...
+
+
+class DummyLogger:
+    """一个什么都不做的备用 Logger，用于解决循环依赖和类型检查问题。"""
+
+    def trace(self, *args, **kwargs):
+        pass
+
+    def debug(self, *args, **kwargs):
+        pass
+
+    def info(self, *args, **kwargs):
+        pass
+
+    def success(self, *args, **kwargs):
+        pass
+
+    def warning(self, *args, **kwargs):
+        pass
+
+    def error(self, *args, **kwargs):
+        pass
+
+    def critical(self, *args, **kwargs):
+        pass
+
+    def exception(self, *args, **kwargs):
+        pass
 
 
 class InterceptHandler(logging.Handler):
@@ -26,7 +66,7 @@ class InterceptHandler(logging.Handler):
         )
 
 
-def setup_logger(config: ConfigManager):
+def setup_logger(config):
     """配置日志系统"""
 
     log_config = config.get().log
