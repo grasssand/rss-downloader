@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeAlias
 
 from feedparser.util import FeedParserDict
 from pydantic import BaseModel, Field, HttpUrl, root_validator, validator
@@ -46,13 +46,15 @@ EXTRACTOR_DOMAIN_MAP = {
     "dmhy": ("dmhy.org",),
 }
 
+Downloader: TypeAlias = Literal["aria2", "qbittorrent"]
+
 
 class FeedConfig(BaseModel):
     name: str
     url: HttpUrl
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"  # 默认下载器为 aria2
+    downloader: Downloader = "aria2"  # 默认下载器为 aria2
     content_extractor: str = "default"  # or "mikan", "nyaa"...
 
     @root_validator()
@@ -109,9 +111,15 @@ class Config(BaseModel):
             seen.add(key)
         return v
 
-    @classmethod
-    def default(cls) -> "Config":
-        return cls()
+
+class ConfigUpdatePayload(BaseModel):
+    """定义了允许通过 API 更新的配置字段"""
+
+    log: LogConfig | None = None
+    web: WebConfig | None = None
+    aria2: Aria2Config | None = None
+    qbittorrent: QBittorrentConfig | None = None
+    feeds: list[FeedConfig] | None = None
 
 
 # ==================================
@@ -126,7 +134,7 @@ class DownloadRecord(BaseModel):
     feed_url: HttpUrl
     published_time: datetime
     download_time: datetime
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"
+    downloader: Downloader = "aria2"
     status: Literal[0, 1] = 0
     mode: Literal[0, 1] = 0
 
@@ -146,33 +154,38 @@ class MikanEntry(ParsedItem):
 
     @root_validator(pre=True)
     @classmethod
-    def pre_process(cls, values: Any) -> Any:
-        item_id = values.get("id")
+    def pre_process(cls, data: Any) -> Any:
+        item_id = data.get("id")
         if item_id and item_id.startswith("http"):
             url = item_id
         else:
-            url = values.get("link")
+            url = data.get("link")
+
+        if hasattr(data, "id") and data.id.startswith("http"):  # type: ignore
+            url = data.id
+        else:
+            url = data.get("link")
 
         download_url = None
         # Mikan, dmhy 提取下载
-        for link in values.get("links", []):  # type: ignore
+        for link in data.get("links", []):
             if link.get("type") in ["application/x-bittorrent"]:
                 download_url = link.get("href")
                 break
 
         # Nyaa 等其他提取下载
         else:
-            download_url = values.get("link")
+            download_url = data.get("link")
 
         # 发布时间提取
         published_time = (
-            datetime.fromtimestamp(time.mktime(values["published_parsed"]))
-            if "published_parsed" in values
+            datetime.fromtimestamp(time.mktime(data["published_parsed"]))
+            if "published_parsed" in data
             else datetime.now()
         )
 
         return {
-            "title": values.get("title", "No Title"),
+            "title": data.get("title", "No Title"),
             "url": url,
             "download_url": download_url,
             "published_time": published_time,
@@ -204,11 +217,16 @@ class DefaultEntry(ParsedItem):
         if not isinstance(data, FeedParserDict):
             return data
 
+        if hasattr(data, "id") and data.id.startswith("http"):  # type: ignore
+            url = data.id
+        else:
+            url = data.get("link")
+
         download_url = data.get("link")
         if hasattr(data, "links"):
             for link in data.links:
                 if link.rel == "enclosure":
-                    download_url = link.href
+                    download_url = link.href if hasattr(link, "href") else None
                     break
 
         # 发布时间提取
@@ -219,8 +237,8 @@ class DefaultEntry(ParsedItem):
         )
 
         return {
-            "title": data.title if hasattr(data, "title") else "No Title",
-            "url": data.id if hasattr(data, "id") else download_url,
+            "title": data.get("title", "No Title"),
+            "url": url,
             "download_url": download_url,
             "published_time": published_time,
         }

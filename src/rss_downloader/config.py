@@ -1,14 +1,32 @@
+import functools
 import os
-import threading
-import time
-from pathlib import Path
-from typing import Any, Literal
+from pathlib import Path as SyncPath
+from typing import Any
 
+import anyio
 import yaml
+from pydantic import HttpUrl, ValidationError
 
-from .models import Aria2Config, Config, FeedConfig, QBittorrentConfig, WebConfig
+from .logger import DummyLogger, LoggerProtocol
+from .models import (
+    Aria2Config,
+    Config,
+    Downloader,
+    FeedConfig,
+    QBittorrentConfig,
+    WebConfig,
+)
 
 CONFIG_FILE = "config.yaml"
+DATABASE_FILE_NAME = "downloads.db"
+
+
+def http_url_representer(dumper: yaml.SafeDumper, data: HttpUrl):
+    """定义如何将 HttpUrl 对象转换为 YAML 字符串"""
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data))
+
+
+yaml.SafeDumper.add_representer(HttpUrl, http_url_representer)
 
 
 def _deep_merge(default: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
@@ -23,91 +41,127 @@ def _deep_merge(default: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
 
 
 class ConfigManager:
-    def __init__(self):
-        self.config_path = self._find_config_path()
-        self._lock = threading.Lock()
+    def __init__(self, config_path: anyio.Path, initial_config: Config):
+        self.config_path = config_path
+        self._lock = anyio.Lock()
         self._config_version = 0
-        self._config = self._load_or_create()
-        self._last_mtime = self.config_path.stat().st_mtime
+        self._config = initial_config
+        self._last_mtime = 0.0
         self._web_mode_enabled = False
+        self.logger: LoggerProtocol = DummyLogger()
 
-    def _find_config_path(self) -> Path:
+    @classmethod
+    async def create(cls) -> "ConfigManager":
+        config_path = await cls._find_config_path()
+        initial_config = await cls._load_or_create(config_path)
+        instance = cls(config_path, initial_config)
+
+        try:
+            stat_result = await instance.config_path.stat()
+            instance._last_mtime = stat_result.st_mtime
+        except FileNotFoundError:
+            pass
+
+        return instance
+
+    @staticmethod
+    async def _find_config_path() -> anyio.Path:
         search_paths = [
-            Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+            anyio.Path(os.environ.get("XDG_CONFIG_HOME", SyncPath.home() / ".config"))
             / "rss-downloader"
             / CONFIG_FILE,  # $XDG_CONFIG_HOME 或 ~/.config
-            Path.cwd() / CONFIG_FILE,  # 当前工作目录
-            Path(__file__).resolve().parent / CONFIG_FILE,  # 脚本所在目录
+            anyio.Path(SyncPath.cwd()) / CONFIG_FILE,  # 当前工作目录
+            anyio.Path(SyncPath(__file__).resolve().parent)
+            / CONFIG_FILE,  # 脚本所在目录
         ]
-        config_path = next(
-            (path for path in search_paths if path.exists()),
-            search_paths[0],  # 如果都不存在，使用第一个路径
-        )
 
-        return config_path
+        for path in search_paths:
+            if await path.exists():
+                return path
+        return search_paths[0]  # 如果都不存在，使用第一个路径
 
-    def _load_or_create(self) -> Config:
+    @staticmethod
+    async def _load_or_create(config_path: anyio.Path) -> Config:
         """加载或创建配置文件"""
-        default_cfg = Config.default()
-        if self.config_path.exists():
-            with self.config_path.open("r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            merged = _deep_merge(default_cfg.dict(), data)
-            if merged != data:
-                with self.config_path.open("w", encoding="utf-8") as f:
-                    yaml.safe_dump(
-                        merged,
-                        f,
-                        allow_unicode=True,
-                        sort_keys=False,
-                        default_flow_style=False,
-                    )
-            return Config.parse_obj(merged)
+        user_data = {}
+        if await config_path.exists():
+            async with await config_path.open("r", encoding="utf-8") as f:
+                content = await f.read()
+                user_data = (
+                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}
+                )
 
-        else:
-            self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.config_path.open("w", encoding="utf-8") as f:
-                yaml.safe_dump(
-                    default_cfg.dict(),
-                    f,
+        default_dump = Config.parse_obj({}).dict()
+        merged_config = _deep_merge(default_dump, user_data)
+        config_obj = Config.parse_obj(merged_config)
+
+        # 仅当文件不存在或内容不完整时才回写
+        if not await config_path.exists() or user_data != merged_config:
+            await config_path.parent.mkdir(parents=True, exist_ok=True)
+            dumped_yaml = await anyio.to_thread.run_sync(
+                functools.partial(
+                    yaml.safe_dump,
                     allow_unicode=True,
                     sort_keys=False,
                     default_flow_style=False,
+                ),
+                config_obj.dict(),
+            )
+            async with await config_path.open("w", encoding="utf-8") as f:
+                await f.write(dumped_yaml)
+
+        return config_obj
+
+    async def _read_only_load(self) -> Config:
+        """一个只读的加载方法供热重载使用，避免回写"""
+        user_data = {}
+        if await self.config_path.exists():
+            async with await self.config_path.open("r", encoding="utf-8") as f:
+                content = await f.read()
+                user_data = (
+                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}
                 )
-            return default_cfg
+
+        default_dump = Config.parse_obj({}).dict()
+        merged_config = _deep_merge(default_dump, user_data)
+        return Config.parse_obj(merged_config)
+
+    def set_logger(self, logger: LoggerProtocol) -> None:
+        self.logger = logger
 
     def get(self) -> Config:
-        with self._lock:
-            return self._config
+        return self._config
 
-    def update(self, new_data: dict[str, Any]):
+    async def update(self, new_data: dict[str, Any]) -> None:
         """更新配置并写回文件"""
-        from .logger import logger
+        self.logger.debug(f"尝试更新配置: {new_data}")
 
-        logger.debug(f"尝试更新配置: {new_data}")
-
-        with self._lock:
-            current_dump = self._config.dict()
+        async with self._lock:
+            backup_config_dump = self._config.dict()
+            merged_for_validation = _deep_merge(backup_config_dump, new_data)
             try:
-                merged = _deep_merge(current_dump, new_data)
-                self._config = Config.parse_obj(merged)
-                with self.config_path.open("w", encoding="utf-8") as f:
-                    yaml.safe_dump(
-                        self._config.dict(),
-                        f,
+                self._config = Config.parse_obj(merged_for_validation)
+                dumped_yaml = await anyio.to_thread.run_sync(
+                    functools.partial(
+                        yaml.safe_dump,
                         allow_unicode=True,
                         sort_keys=False,
-                        default_flow_style=False,
-                    )
-            except Exception as e:
-                logger.exception(f"更新配置文件时发生错误: {e}")
-                self._config = Config.parse_obj(current_dump)
+                    ),
+                    self._config.dict(),
+                )
+                async with await self.config_path.open("w", encoding="utf-8") as f:
+                    await f.write(dumped_yaml)
 
-    def initialize(self, cli_force_web: bool = False):
+            except (ValidationError, OSError) as e:
+                self.logger.error(f"配置更新失败，正在回滚... 错误: {e}")
+                self._config = Config.parse_obj(backup_config_dump)
+                raise e
+
+    def initialize(self, tg: anyio.abc.TaskGroup, cli_force_web: bool = False):
         """根据命令行参数或配置文件启用配置热重载"""
         self._web_mode_enabled = cli_force_web or self._config.web.enabled
         if self._web_mode_enabled:
-            self._start_watcher()
+            tg.start_soon(self._watch_for_changes)
 
     @property
     def is_web_mode(self) -> bool:
@@ -137,7 +191,6 @@ class ConfigManager:
         for feed in self.feeds:
             if feed.name == feed_name:
                 return feed
-
         return None
 
     def get_feed_patterns(self, feed_name: str) -> tuple[list[str], list[str]]:
@@ -147,41 +200,33 @@ class ConfigManager:
                 include_patterns = feed.include
                 exclude_patterns = feed.exclude
                 return include_patterns, exclude_patterns
-
         return [], []  # 如果找不到对应的源，返回空规则
 
-    def get_feed_downloader(self, feed_name: str) -> Literal["aria2", "qbittorrent"]:
+    def get_feed_downloader(self, feed_name: str) -> Downloader:
         """获取指定RSS源的下载器类型"""
         for feed in self.feeds:
             if feed.name == feed_name:
                 return feed.downloader
-
         return "aria2"
 
     def get_config_version(self) -> int:
         """获取当前配置的版本号"""
-        with self._lock:
-            return self._config_version
+        return self._config_version
 
-    def _start_watcher(self):
+    async def _watch_for_changes(self):
         """启动后台线程监控文件变化"""
-        from .logger import logger
+        self.logger.info(f"正在监控配置文件: {self.config_path}")
 
-        def watch():
-            while True:
-                try:
-                    mtime = self.config_path.stat().st_mtime
-                    if mtime != self._last_mtime:
-                        with self._lock:
-                            self._config = self._load_or_create()
+        while True:
+            await anyio.sleep(5)
+            try:
+                if await self.config_path.exists():
+                    mtime = (await self.config_path.stat()).st_mtime
+                    if mtime > self._last_mtime:
+                        async with self._lock:
+                            self._config = await self._read_only_load()
                             self._last_mtime = mtime
-                            self._config_version += 1  # 配置重载时，版本号+1
-                        logger.info(f"配置文件已重新加载: {self.config_path}")
-                except FileNotFoundError:
-                    pass
-                time.sleep(5)  # 检查间隔
-
-        threading.Thread(target=watch, daemon=True).start()
-
-
-config = ConfigManager()
+                            self._config_version += 1
+                        self.logger.info(f"配置文件已重新加载: {self.config_path}")
+            except Exception:
+                self.logger.exception("配置文件监控任务出错")

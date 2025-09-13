@@ -15,3 +15,8 @@ node_modules/
 logs/
 config.yaml
 *.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

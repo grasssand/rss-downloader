@@ -1,23 +1,47 @@
 import sqlite3
 from datetime import datetime
 
-from .config import config
-from .logger import logger
+import aiosqlite
+from anyio import Path
+
+from .logger import LoggerProtocol
 from .models import DownloadRecord
 
-DATABASE_FILE = "downloads.db"
+
+def adapt_datetime(dt_obj: datetime) -> str:
+    """将 datetime 对象转换为 ISO 8601 格式的字符串以便存储。"""
+    return dt_obj.isoformat()
+
+
+def convert_datetime(iso_str: bytes) -> datetime:
+    """将从数据库读取的 ISO 8601 格式字符串转换回 datetime 对象。"""
+    return datetime.fromisoformat(iso_str.decode())
+
+
+# https://docs.python.org/3/library/sqlite3.html#sqlite3-adapter-converter-recipes
+aiosqlite.register_adapter(datetime, adapt_datetime)
+aiosqlite.register_converter("TIMESTAMP", convert_datetime)
 
 
 class Database:
-    def __init__(self):
-        self.db_path = config.config_path.parent / DATABASE_FILE
-        self._init_db()
+    def __init__(self, db_path: Path, logger: LoggerProtocol):
+        self.db_path = db_path
+        self.logger = logger
 
-    def _init_db(self):
+    @classmethod
+    async def create(cls, db_path: Path, logger: LoggerProtocol) -> "Database":
+        """创建并初始化一个 Database 实例"""
+        instance = cls(db_path, logger)
+        await instance._init_db()
+        return instance
+
+    async def _init_db(self):
         """初始化数据库表"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
+        async with aiosqlite.connect(
+            self.db_path,  # type: ignore
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        ) as conn:
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS downloads (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,                -- 标题
@@ -29,84 +53,83 @@ class Database:
                     download_time TIMESTAMP NOT NULL,   -- 下载时间
                     downloader TEXT NOT NULL,           -- 下载器名称, aira2/qbittorrent
                     status INTEGER NOT NULL,            -- 0失败，1成功
-                    mode INTEGER DEFAULT 0               -- 0自动下载，1手动下载
+                    mode INTEGER DEFAULT 0              -- 0自动下载，1手动下载
                 )
             """)
-            conn.commit()
+            await conn.commit()
 
-    def reset(self):
+    async def reset(self):
         """重置数据库"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("DROP TABLE IF EXISTS downloads")
-            conn.commit()
-        self._init_db()
+        async with aiosqlite.connect(
+            self.db_path,  # type: ignore
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        ) as conn:
+            await conn.execute("DROP TABLE IF EXISTS downloads")
+            await conn.commit()
+        await self._init_db()
 
-    def insert(self, record: DownloadRecord) -> int:
-        """添加下载记录
-
-        Args:
-            title: 标题
-            url: 链接
-            download_url: 下载链接
-            feed_name: RSS源名称
-            feed_url: RSS源地址
-            published_time: 发布时间
-            downloader: 下载器名称
-            status: 下载状态，0表示失败，1表示成功
-            mode: 下载模式，0表示自动下载，1表示手动下载
-        """
+    async def insert(self, record: DownloadRecord) -> int:
+        """添加下载记录"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO downloads (
-                        title, url, download_url, feed_name, feed_url,
-                        published_time, download_time, downloader, status, mode
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        record.title,
-                        str(record.url),
-                        str(record.download_url),
-                        record.feed_name,
-                        str(record.feed_url),
-                        record.published_time,
-                        record.download_time,
-                        record.downloader,
-                        record.status,
-                        record.mode,
-                    ),
-                )
-                conn.commit()
-                return cursor.lastrowid  # type: ignore
+            async with aiosqlite.connect(
+                self.db_path,  # type: ignore
+                detect_types=sqlite3.PARSE_DECLTYPES,
+            ) as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        """
+                        INSERT INTO downloads (
+                            title, url, download_url, feed_name, feed_url,
+                            published_time, download_time, downloader, status, mode
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            record.title,
+                            str(record.url),
+                            str(record.download_url),
+                            record.feed_name,
+                            str(record.feed_url),
+                            record.published_time,
+                            record.download_time,
+                            record.downloader,
+                            record.status,
+                            record.mode,
+                        ),
+                    )
+                    await conn.commit()
+                    return cursor.lastrowid  # type: ignore
 
         except Exception as e:
-            logger.error(f"添加下载记录失败: {e}")
+            self.logger.error(f"添加下载记录失败: {e}")
             return 0
 
-    def is_downloaded(self, url: str) -> bool:
+    async def is_downloaded(self, url: str) -> bool:
         """检查URL是否已经下载过"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COUNT(*) FROM downloads WHERE status = 1 and download_url = ?",
-                (url,),
-            )
-            count = cursor.fetchone()[0]
-            return count > 0
+        async with aiosqlite.connect(
+            self.db_path,  # type: ignore
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        ) as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT COUNT(*) FROM downloads WHERE status = 1 and download_url = ?",
+                    (url,),
+                )
+                result = await cursor.fetchone()
+                return result[0] > 0 if result else False
 
-    def search_download_by_id(self, id: int) -> DownloadRecord | None:
+    async def search_download_by_id(self, id: int) -> DownloadRecord | None:
         """通过ID获取下载记录"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM downloads WHERE id = ?", (id,))
-            row = cursor.fetchone()
-            return DownloadRecord.parse_obj(dict(row)) if row else None
+        async with aiosqlite.connect(
+            self.db_path,  # type: ignore
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        ) as conn:
+            conn.row_factory = aiosqlite.Row
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT * FROM downloads WHERE id = ?", (id,))
+                row = await cursor.fetchone()
+                return DownloadRecord.parse_obj(dict(row)) if row else None
 
-    def search_downloads(
+    async def search_downloads(
         self,
         title: str | None = None,
         feed_name: str | None = None,
@@ -127,63 +150,60 @@ class Database:
         if title:
             query_parts.append("AND title LIKE ?")
             params.append(f"%{title}%")
-
         if feed_name:
             query_parts.append("AND feed_name LIKE ?")
             params.append(f"%{feed_name}%")
-
         if downloader:
             query_parts.append("AND downloader = ?")
             params.append(downloader)
-
         if status is not None:
             query_parts.append("AND status = ?")
             params.append(status)
-
         if mode is not None:
             query_parts.append("AND mode = ?")
             params.append(mode)
-
         if published_start_time:
             query_parts.append("AND published_time >= ?")
             params.append(published_start_time)
-
         if published_end_time:
             query_parts.append("AND published_time <= ?")
             params.append(published_end_time)
-
         if download_start_time:
             query_parts.append("AND download_time >= ?")
             params.append(download_start_time)
-
         if download_end_time:
             query_parts.append("AND download_time <= ?")
             params.append(download_end_time)
 
         count_params = list(params)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+        async with aiosqlite.connect(
+            self.db_path,  # type: ignore
+            detect_types=sqlite3.PARSE_DECLTYPES,
+        ) as conn:
+            conn.row_factory = aiosqlite.Row
 
             # 获取总数
-            count_query = (
-                "SELECT COUNT(*) FROM ("
-                + " ".join(query_parts).replace("SELECT *", "SELECT id")
-                + ")"
-            )
-            cursor.execute(count_query, count_params)
-            total_count = cursor.fetchone()[0]
+            async with conn.cursor() as cursor:
+                count_query = (
+                    "SELECT COUNT(*) FROM ("
+                    + " ".join(query_parts).replace("SELECT *", "SELECT id")
+                    + ")"
+                )
+                await cursor.execute(count_query, count_params)
+                total_count_result = await cursor.fetchone()
+                total_count = total_count_result[0] if total_count_result else 0
 
-            logger.debug(f"查询下载记录，SQL: {' '.join(query_parts)}, 参数: {params}")
+            self.logger.debug(
+                f"查询下载记录，SQL: {' '.join(query_parts)}, 参数: {params}"
+            )
 
             # 获取数据
-            query_parts.append("ORDER BY download_time DESC LIMIT ? OFFSET ?")
-            params.extend([limit, offset])
-            cursor.execute(" ".join(query_parts), params)
-            results = [DownloadRecord.parse_obj(dict(row)) for row in cursor.fetchall()]
+            async with conn.cursor() as cursor:
+                query_parts.append("ORDER BY download_time DESC LIMIT ? OFFSET ?")
+                params.extend([limit, offset])
+                await cursor.execute(" ".join(query_parts), params)
+                rows = await cursor.fetchall()
+                results = [DownloadRecord.parse_obj(dict(row)) for row in rows]
 
             return results, total_count
-
-
-db = Database()
