@@ -1,3 +1,21 @@
+## v0.2.0 (2025-09-13)
+
+### Fix
+
+- **parser**: 匹配规则忽略大小写
+
+### Refactor
+
+- 异步重构
+- **downloader**: 优化下载器初始化时异常处理
+- **database**: 设置 sqlite 连接参数 `detect_types`
+- **models**: 优化 DefaultEntry 解析
+- **web**: 重构优化 web
+- **main**: 优化异常处理
+- **services**: 集中核心服务实例容器
+- **database**: 解耦数据库配置
+- **config**: 优化配置更新、重载
+
 ## v0.1.3 (2025-09-09)
 
 ### Refactor
