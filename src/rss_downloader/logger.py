@@ -57,8 +57,8 @@ class InterceptHandler(logging.Handler):
 
         # 从调用栈中找到正确的位置
         frame, depth = logging.currentframe(), 2
-        while frame.f_code.co_filename == logging.__file__:  # type: ignore
-            frame = frame.f_back  # type: ignore
+        while frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
             depth += 1
 
         logger.opt(depth=depth, exception=record.exc_info).log(
@@ -66,7 +66,7 @@ class InterceptHandler(logging.Handler):
         )
 
 
-def setup_logger(config):
+async def setup_logger(config):
     """配置日志系统"""
 
     log_config = config.get().log
@@ -74,7 +74,7 @@ def setup_logger(config):
 
     # 配置日志文件
     log_dir = config.config_path.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
+    await log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"rss_downloader_{datetime.now().strftime('%Y%m%d')}.log"
 
     # 移除默认的处理器
@@ -100,6 +100,6 @@ def setup_logger(config):
     )
 
     # 配置拦截器以统一日志格式
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
 
     return logger

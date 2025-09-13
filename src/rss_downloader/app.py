@@ -11,10 +11,7 @@ def create_app(services: AppServices) -> FastAPI:
     app = FastAPI()
 
     # 从传入的容器中获取服务实例，并附加到 app.state
-    app.state.db = services.db
-    app.state.downloader = services.downloader
-    app.state.config = services.config
-    app.state.logger = services.logger
+    app.state.services = services
 
     app.mount(
         "/static",

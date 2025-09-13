@@ -1,6 +1,6 @@
 import time
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeAlias
 
 from feedparser.util import FeedParserDict
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
@@ -46,13 +46,15 @@ EXTRACTOR_DOMAIN_MAP = {
     "dmhy": ("dmhy.org",),
 }
 
+Downloader: TypeAlias = Literal["aria2", "qbittorrent"]
+
 
 class FeedConfig(BaseModel):
     name: str
     url: HttpUrl
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"  # 默认下载器为 aria2
+    downloader: Downloader = "aria2"  # 默认下载器为 aria2
     content_extractor: str = "default"  # or "mikan", "nyaa"...
 
     @model_validator(mode="after")
@@ -124,7 +126,7 @@ class DownloadRecord(BaseModel):
     feed_url: HttpUrl
     published_time: datetime
     download_time: datetime
-    downloader: Literal["aria2", "qbittorrent"] = "aria2"
+    downloader: Downloader = "aria2"
     status: Literal[0, 1] = 0
     mode: Literal[0, 1] = 0
 

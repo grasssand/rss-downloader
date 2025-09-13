@@ -10,13 +10,22 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
+    "aiosqlite>=0.21.0",
+    "anyio>=4.10.0",
     "fastapi[standard]>=0.116.1",
     "feedparser>=6.0.11",
+    "httpx>=0.28.1",
     "loguru>=0.7.3",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
     "qbittorrent-api>=2025.7.0",
-    "requests>=2.32.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=6.3.0",
+    "respx>=0.22.0",
 ]
 
 [project.scripts]
@@ -26,6 +35,23 @@ rss-downloader = "rss_downloader:main"
 requires = ["uv_build>=0.8.15,<0.9.0"]
 build-backend = "uv_build"
 
+[tool.pyright]
+include = ["src/rss_downloader", "tests"]
+pythonVersion = "3.10"
+pythonPlatform = "All"
+typeCheckingMode ="standard"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "U", "C4", "B"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
 [tool.commitizen]
 name = "cz_conventional_commits"
 tag_format = "v$version"
@@ -33,3 +59,23 @@ version_scheme = "pep440"
 version_provider = "uv"
 update_changelog_on_bump = true
 major_version_zero = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = "tests"
+pythonpath = "src"
+addopts = "--color=yes --cov-report=term-missing --cov-report=html -ra"
+filterwarnings = [
+    "ignore:unclosed database:ResourceWarning",
+]
+
+[tool.coverage.run]
+source = ["rss_downloader"]
+omit = [
+    "src/rss_downloader/__main__.py",
+    "src/rss_downloader/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85
