@@ -6,13 +6,24 @@
 
 ### 1. 安装 🚀
 
-需要 Python 环境。下载 [最新 wheel 包](https://github.com/grasssand/rss-downloader/releases) 并安装。
-
+需要 Python 环境。
 ```bash
 # pipx
-pipx install /path/to/rss_downloader-xxx.whl
+pipx install rss-downloader
 # or uv
-uv tool install /path/to/rss_downloader-xxx.whl
+uv tool install rss-downloader
+# or pip (不推荐)
+pip install --user rss-downloader
+```
+
+更新
+```bash
+# pipx
+pipx upgrade rss-downloader
+# uv
+uv tool upgrade rss-downloader
+# pip
+pip install --user --upgrade rss-downloader
 ```
 
 ### 2. 配置 ⚙️
@@ -51,7 +62,7 @@ feeds:
       - 简体
     exclude:     # 排除规则
       - 720p
-      - - \d{2,}\s*[-|~]\s*\d{2,}
+      - \d{2,}\s*[-|~]\s*\d{2,}
     downloader: aria2 # or qbittorrent
 
   - name: Nyaa
