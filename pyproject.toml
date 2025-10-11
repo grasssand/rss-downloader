@@ -17,12 +17,12 @@ classifiers = [
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3 :: Only",
     "Topic :: Internet",
     "Topic :: Utilities",
 ]
@@ -35,7 +35,6 @@ dependencies = [
     "loguru>=0.7.3",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
-    "qbittorrent-api>=2025.7.0",
 ]
 
 [dependency-groups]
@@ -54,7 +53,7 @@ Repository = "https://github.com/grasssand/rss-downloader"
 rss-downloader = "rss_downloader:main"
 
 [build-system]
-requires = ["uv_build>=0.8.15,<0.9.0"]
+requires = ["uv_build>=0.9.0,<0.10.0"]
 build-backend = "uv_build"
 
 [[tool.uv.index]]
