@@ -99,6 +99,5 @@ class AppServices:
 
     async def close(self):
         """关闭所有需要关闭的服务"""
-        self.logger.info("正在关闭共享的 HTTP 客户端...")
         await self.http_client.aclose()
         self.logger.info("服务已关闭。")
