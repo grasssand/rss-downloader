@@ -42,8 +42,10 @@ class QBittorrentConfig(BaseModel):
 
 EXTRACTOR_DOMAIN_MAP = {
     "mikan": ("mikanime.tv", "mikanani.me"),
-    "nyaa": ("nyaa.si",),
     "dmhy": ("dmhy.org",),
+    "bangumi_moe": ("bangumi.moe",),
+    "acg_rip": ("acg.rip",),
+    "nyaa": ("nyaa.si",),
 }
 
 Downloader: TypeAlias = Literal["aria2", "qbittorrent"]
@@ -155,13 +157,11 @@ class TorrentEntryMixin:
 
         download_url = None
         if hasattr(data, "links"):
-            # Mikan, dmhy 提取下载
             for link in data.links:
                 if link.get("type") in ["application/x-bittorrent"]:
                     download_url = link.href if hasattr(link, "href") else None
                     break
 
-            # Nyaa 等其他提取下载
             else:
                 download_url = data.get("link")
 
@@ -181,19 +181,31 @@ class TorrentEntryMixin:
 
 
 class MikanEntry(TorrentEntryMixin, ParsedItem):
-    """解析 Mikan RSS 源模型"""
+    """解析 蜜柑 RSS 源模型"""
 
     pass
 
 
 class DmhyEntry(TorrentEntryMixin, ParsedItem):
-    """解析动漫花园 RSS 源模型"""
+    """解析 动漫花园 RSS 源模型"""
+
+    pass
+
+
+class BangumiMoeEntry(TorrentEntryMixin, ParsedItem):
+    """解析 萌番组 RSS 源模型"""
+
+    pass
+
+
+class AcgRipEntry(TorrentEntryMixin, ParsedItem):
+    """解析 ACG.RIP RSS 源模型"""
 
     pass
 
 
 class NyaaEntry(TorrentEntryMixin, ParsedItem):
-    """解析动漫花园 RSS 源模型"""
+    """解析 Nyaa RSS 源模型"""
 
     pass
 
@@ -237,6 +249,8 @@ class DefaultEntry(ParsedItem):
 ENTRY_PARSER_MAP = {
     "mikan": MikanEntry,
     "dmhy": DmhyEntry,
+    "bangumi_moe": BangumiMoeEntry,
+    "acg_rip": AcgRipEntry,
     "nyaa": NyaaEntry,
     "default": DefaultEntry,
 }
