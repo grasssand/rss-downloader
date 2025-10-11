@@ -103,12 +103,12 @@ class RSSParser:
 
                 if self.match_filters(parsed_item.title, feed_name):
                     matched_items.append(parsed_item)
-                    self.logger.info(f"匹配成功: {parsed_item.title}")
+                    self.logger.info(f"匹配成功({feed_name}): {parsed_item.title}")
                 else:
-                    self.logger.warning(f"匹配失败: {parsed_item.title}")
+                    self.logger.warning(f"匹配失败({feed_name}): {parsed_item.title}")
 
             except ValidationError as entry_error:
-                self.logger.error(f"处理条目时发生错误: {entry_error}")
+                self.logger.error(f"处理条目时发生错误({feed_name}): {entry_error}")
                 continue
 
         self.logger.info(f"{feed_name}: 匹配到 {len(matched_items)} 个条目")

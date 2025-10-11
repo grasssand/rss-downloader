@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Any, Protocol
 
 from loguru import logger
@@ -75,7 +74,7 @@ async def setup_logger(config):
     # 配置日志文件
     log_dir = config.config_path.parent / "logs"
     await log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / f"rss_downloader_{datetime.now().strftime('%Y%m%d')}.log"
+    log_file = log_dir / "rss_downloader.log"
 
     # 移除默认的处理器
     logger.remove()
@@ -84,7 +83,7 @@ async def setup_logger(config):
     logger.add(
         lambda msg: print(msg, end=""),
         colorize=True,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level:<8}</level> | <cyan>{name:<30}</cyan>:<cyan>{line:>4}</cyan> - <level>{message}</level>",
         level=log_level,
     )
 
@@ -94,7 +93,7 @@ async def setup_logger(config):
         rotation="10 MB",  # 当日志文件达到10MB时轮转
         retention=5,  # 保留最近5个日志文件
         compression="zip",  # 压缩旧的日志文件
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name:<30}:{line:>4} - {message}",
         level=log_level,
         encoding="utf-8",
     )

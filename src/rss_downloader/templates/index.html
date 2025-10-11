@@ -12,6 +12,13 @@
     </svg>
 </div>
 
+<div id="loading-overlay" class="hidden fixed inset-0 bg-white/70 z-50 flex items-center justify-center">
+    <svg class="animate-spin h-8 w-8 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+</div>
+
 <form method="get" class="mb-6 p-4 bg-white border border-zinc-200 rounded-lg shadow-sm">
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <input type="text" name="title" placeholder="标题关键词" value="{{ query.title or '' }}"
@@ -22,6 +29,7 @@
             <option value="">全部下载器</option>
             <option value="aria2" {% if query.downloader == 'aria2' %}selected{% endif %}>Aria2</option>
             <option value="qbittorrent" {% if query.downloader == 'qbittorrent' %}selected{% endif %}>qBittorrent</option>
+            <option value="transmission" {% if query.downloader == 'transmission' %}selected{% endif %}>Transmission</option>
         </select>
         <div class="flex space-x-2">
             <select name="status" class="w-1/2 px-3 py-2 border border-zinc-200 rounded-md focus:ring-amber-500 focus:border-amber-500">
@@ -119,7 +127,13 @@
                             title="发送到 qBittorrent"
                             class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-blue-700 bg-blue-100 hover:bg-blue-200">
                             <svg class="h-4 w-4 mr-1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="#2598d2"><path d="M12,0C5.373,0,0,5.373,0,12s5.373,12,12,12s12-5.373,12-12S18.627,0,12,0z M8.945,16.945V12.835H6.835V6.946h9.999v5.889h-3.834v4.11H8.945z"></path></svg>
-                            <span>qB</span>
+                            <span>QB</span>
+                    </button>
+                    <button onclick="sendToDownloader('transmission', '{{ dl.title | replace("'", "\\'") }}', {{ dl.id }})"
+                            title="发送到 Transmission"
+                            class="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded text-purple-700 bg-purple-100 hover:bg-purple-200">
+                            <svg class="h-4 w-4 mr-1" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M19.437 12c0 .91-.194 1.78-.543 2.57l3.75 2.16c.33.19.44.64.24 1.01l-2.29 3.96c-.19.33-.64.44-1.01.24l-3.57-2.06c-1.2.91-2.61 1.45-4.12 1.45-1.5 0-2.92-.54-4.12-1.45l-3.57 2.06c-.33.19-.82.08-1.01-.24l-2.29-3.96c-.19-.33-.08-.82.24-1.01l3.75-2.16a7.99 7.99 0 0 1-.54-2.57c0-.91.19-1.78.54-2.57L1.137 7.27c-.33-.19-.44-.64-.24-1.01l2.29-3.96c.19-.33.64.44 1.01-.24l3.57 2.06c1.2-.91 2.61-1.45 4.12-1.45 1.5 0 2.92.54 4.12 1.45l3.57-2.06c.33-.19.82-.08 1.01.24l2.29 3.96c.19.33.08.82-.24 1.01l-3.75 2.16c.35.79.54 1.66.54 2.57zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>
+                            <span>TR</span>
                     </button>
                 </td>
             </tr>

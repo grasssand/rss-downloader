@@ -1,7 +1,7 @@
 ## RSS Downloader
 ---
 
-一个 RSS 订阅下载工具，配合 Aria2 / qBittorrent 自动追番。
+一个 RSS 订阅下载工具，配合 Aria2 / qBittorrent / Transmission 自动追番。
 
 
 ### 1. 安装 🚀
@@ -10,9 +10,21 @@
 
 ```bash
 # pipx
-pipx install /path/to/rss_downloader-xxx.whl
+pipx install rss-downloader
 # or uv
-uv tool install /path/to/rss_downloader-xxx.whl
+uv tool install rss-downloader
+# or pip (不推荐)
+pip install --user rss-downloader
+```
+
+更新
+```bash
+# pipx
+pipx upgrade rss-downloader
+# uv
+uv tool upgrade rss-downloader
+# pip
+pip install --user --upgrade rss-downloader
 ```
 
 ### 2. 配置 ⚙️
@@ -42,6 +54,18 @@ qbittorrent:
   username: admin
   password: password
 
+# Transmission 配置 (如果不用可以留空或删除)
+transmission:
+  host: http://localhost:9091/
+  username: admin
+  password: password
+
+# Webhook 配置 (如果不用可以留空或删除)
+webhooks:
+  - name: Discord
+    url: https://discord.com/api/webhooks/xxx
+    enabled: true
+
 # RSS 源配置列表
 feeds:
   - name: Mikan
@@ -51,8 +75,8 @@ feeds:
       - 简体
     exclude:     # 排除规则
       - 720p
-      - - \d{2,}\s*[-|~]\s*\d{2,}
-    downloader: aria2 # or qbittorrent
+      - \d{2,}\s*[-|~]\s*\d{2,}
+    downloader: aria2 # or qbittorrent / transmission
 
   - name: Nyaa
     url: https://nyaa.si/?page=rss&q=

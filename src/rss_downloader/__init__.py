@@ -39,7 +39,7 @@ async def async_main() -> None:
                 """后台定时执行下载任务"""
                 while True:
                     try:
-                        await services.downloader.run()
+                        await services.rss_downloader.run()
                     except Exception:
                         services.logger.exception("下载器后台任务运行时发生错误")
                     interval = services.config.web.interval_hours
@@ -64,7 +64,7 @@ async def async_main() -> None:
                 tg.start_soon(server.serve)
 
         else:
-            await services.downloader.run()
+            await services.rss_downloader.run()
 
     except (KeyboardInterrupt, anyio.get_cancelled_exc_class()):
         services.logger.info("程序被用户中断")

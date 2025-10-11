@@ -1,6 +1,6 @@
 [project]
 name = "rss-downloader"
-version = "0.2.0+compat"
+version = "0.3.0+compat"
 description = "A Simple RSS Download Manager"
 readme = "README.md"
 authors = [
@@ -9,6 +9,22 @@ authors = [
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
+keywords = ["rss", "downloader", "aria2", "qbittorrent", "automation", "anime"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Framework :: FastAPI",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet",
+    "Topic :: Utilities",
+]
 dependencies = [
     "aiosqlite>=0.21.0",
     "anyio>=4.10.0",
@@ -17,7 +33,6 @@ dependencies = [
     "loguru>=0.7.3",
     "pydantic~=1.10.22",
     "pyyaml>=6.0.2",
-    "qbittorrent-api>=2025.7.0",
 ]
 
 [dependency-groups]
@@ -34,12 +49,23 @@ web = [
     "uvicorn[standard]~=0.17.6",
 ]
 
+[project.urls]
+Homepage = "https://github.com/grasssand/rss-downloader"
+Repository = "https://github.com/grasssand/rss-downloader"
+"Bug Tracker" = "https://github.com/grasssand/rss-downloader/issues"
+
 [project.scripts]
 rss-downloader = "rss_downloader:main"
 
 [build-system]
-requires = ["uv_build>=0.8.15,<0.9.0"]
+requires = ["uv_build>=0.9.0,<0.10.0"]
 build-backend = "uv_build"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
 
 [tool.pyright]
 include = ["src/rss_downloader", "tests"]

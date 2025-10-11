@@ -6,10 +6,11 @@ from pydantic import HttpUrl
 
 from .config import ConfigManager
 from .database import Database
-from .downloaders import Aria2Client, QBittorrentClient
+from .downloaders import Aria2Client, QBittorrentClient, TransmissionClient
 from .logger import LoggerProtocol
 from .models import Downloader, DownloadRecord
 from .parser import RSSParser
+from .webhook import WebhookService
 
 
 class DownloaderError(Exception):
@@ -29,6 +30,8 @@ class RSSDownloader:
         parser: RSSParser,
         aria2: Aria2Client | None,
         qbittorrent: QBittorrentClient | None,
+        transmission: TransmissionClient | None,
+        webhook_service: WebhookService,
     ):
         self.config = config
         self.db = database
@@ -36,9 +39,8 @@ class RSSDownloader:
         self.parser = parser
         self.aria2 = aria2
         self.qbittorrent = qbittorrent
-
-        if not self.aria2 and not self.qbittorrent:
-            self.logger.warning("未配置任何下载器，无法下载内容")
+        self.transmission = transmission
+        self.webhook_service = webhook_service
 
     async def _send_to_downloader(
         self,
@@ -57,11 +59,12 @@ class RSSDownloader:
                 if downloader_client:
                     result = await downloader_client.add_link(str(item["download_url"]))
                     if "error" in result:
-                        error_message = result["error"]
+                        error_message = result.get("error", "未知错误")
                     else:
                         status = True
                 else:
                     error_message = "下载器 aria2 未配置或不可用"
+
             elif downloader_name == "qbittorrent":
                 downloader_client = self.qbittorrent
                 if downloader_client:
@@ -69,6 +72,18 @@ class RSSDownloader:
                         status = True
                 else:
                     error_message = "下载器 qbittorrent 未配置或不可用"
+
+            elif downloader_name == "transmission":
+                downloader_client = self.transmission
+                if downloader_client:
+                    result = await downloader_client.add_link(str(item["download_url"]))
+                    if result.get("result") == "success":
+                        status = True
+                    else:
+                        error_message = result.get("result", "未知错误")
+                else:
+                    error_message = "下载器 transmission 未配置或不可用"
+
             else:
                 error_message = f"未知的下载器类型: {downloader_name}"
 
@@ -90,6 +105,8 @@ class RSSDownloader:
             mode=mode,
         )
         new_id = await self.db.insert(record)
+
+        await self.webhook_service.send(record)
 
         if status:
             self.logger.info(

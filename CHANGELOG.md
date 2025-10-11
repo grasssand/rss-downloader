@@ -1,3 +1,11 @@
+## v0.3.0 (2025-10-11)
+
+### Feat
+
+- 添加 webhook 通知
+- 支持 Transmission 下载器
+- **models**: 添加 bangumi.moe, acg.rip RSS 解析模型
+
 ## v0.2.0 (2025-09-13)
 
 ### Fix

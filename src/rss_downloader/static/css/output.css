@@ -1,4 +1,4 @@
-/*! tailwindcss v4.1.13 | MIT License | https://tailwindcss.com */
+/*! tailwindcss v4.1.14 | MIT License | https://tailwindcss.com */
 @layer properties;
 @layer theme, base, components, utilities;
 @layer theme {
@@ -31,6 +31,8 @@
     --color-indigo-100: oklch(93% 0.034 272.788);
     --color-indigo-800: oklch(39.8% 0.195 277.366);
     --color-purple-100: oklch(94.6% 0.033 307.174);
+    --color-purple-200: oklch(90.2% 0.063 306.703);
+    --color-purple-700: oklch(49.6% 0.265 301.924);
     --color-purple-800: oklch(43.8% 0.218 303.724);
     --color-gray-500: oklch(55.1% 0.027 264.364);
     --color-gray-600: oklch(44.6% 0.03 256.802);
@@ -311,6 +313,9 @@
   }
   .hidden {
     display: none;
+  }
+  .inline {
+    display: inline;
   }
   .inline-block {
     display: inline-block;
@@ -770,6 +775,9 @@
   .text-orange-700 {
     color: var(--color-orange-700);
   }
+  .text-purple-700 {
+    color: var(--color-purple-700);
+  }
   .text-purple-800 {
     color: var(--color-purple-800);
   }
@@ -867,6 +875,13 @@
     &:hover {
       @media (hover: hover) {
         background-color: var(--color-orange-200);
+      }
+    }
+  }
+  .hover\:bg-purple-200 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-purple-200);
       }
     }
   }

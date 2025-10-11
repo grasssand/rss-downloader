@@ -40,13 +40,27 @@ class QBittorrentConfig(BaseModel):
     password: str | None = None
 
 
+class TransmissionConfig(BaseModel):
+    host: HttpUrl | None = HttpUrl("http://127.0.0.1:9091", scheme="http")  # type: ignore
+    username: str | None = None
+    password: str | None = None
+
+
+class WebhookConfig(BaseModel):
+    name: str
+    url: HttpUrl
+    enabled: bool = True
+
+
 EXTRACTOR_DOMAIN_MAP = {
     "mikan": ("mikanime.tv", "mikanani.me"),
-    "nyaa": ("nyaa.si",),
     "dmhy": ("dmhy.org",),
+    "bangumi_moe": ("bangumi.moe",),
+    "acg_rip": ("acg.rip",),
+    "nyaa": ("nyaa.si",),
 }
 
-Downloader: TypeAlias = Literal["aria2", "qbittorrent"]
+Downloader: TypeAlias = Literal["aria2", "qbittorrent", "transmission"]
 
 
 class FeedConfig(BaseModel):
@@ -78,6 +92,8 @@ class Config(BaseModel):
     web: WebConfig = Field(default_factory=WebConfig)
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
+    transmission: TransmissionConfig | None = None
+    webhooks: list[WebhookConfig] = Field(default_factory=list)
     feeds: list[FeedConfig] = Field(default_factory=list)
 
     @root_validator()
@@ -86,6 +102,7 @@ class Config(BaseModel):
         feeds = values.get("feeds", [])
         aria2_config = values.get("aria2")
         qb_config = values.get("qbittorrent")
+        tr_config = values.get("transmission")
 
         used_downloaders = {feed.downloader for feed in feeds}
 
@@ -95,6 +112,11 @@ class Config(BaseModel):
         if "qbittorrent" in used_downloaders and not qb_config:
             raise ValueError(
                 "Feed 中指定了 qbittorrent 下载器, 但未提供 [qbittorrent] 配置"
+            )
+
+        if "transmission" in used_downloaders and not tr_config:
+            raise ValueError(
+                "Feed 中指定了 transmission 下载器, 但未提供 [transmission] 配置"
             )
 
         return values
@@ -113,12 +135,14 @@ class Config(BaseModel):
 
 
 class ConfigUpdatePayload(BaseModel):
-    """定义了允许通过 API 更新的配置字段"""
+    """允许通过 API 更新的配置字段"""
 
     log: LogConfig | None = None
     web: WebConfig | None = None
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
+    transmission: TransmissionConfig | None = None
+    webhooks: list[WebhookConfig] | None = None
     feeds: list[FeedConfig] | None = None
 
 
@@ -150,7 +174,7 @@ class ParsedItem(BaseModel):
 
 
 class MikanEntry(ParsedItem):
-    """解析 Mikan RSS 源模型"""
+    """解析 蜜柑 RSS 源模型"""
 
     @root_validator(pre=True)
     @classmethod
@@ -167,13 +191,11 @@ class MikanEntry(ParsedItem):
             url = data.get("link")
 
         download_url = None
-        # Mikan, dmhy 提取下载
         for link in data.get("links", []):
             if link.get("type") in ["application/x-bittorrent"]:
                 download_url = link.get("href")
                 break
 
-        # Nyaa 等其他提取下载
         else:
             download_url = data.get("link")
 
@@ -193,7 +215,23 @@ class MikanEntry(ParsedItem):
 
 
 class DmhyEntry(ParsedItem):
-    """解析动漫花园 RSS 源模型"""
+    """解析 动漫花园 RSS 源模型"""
+
+    @root_validator(pre=True)
+    def pre_process(cls, values: Any) -> dict:
+        return MikanEntry.pre_process(values)
+
+
+class BangumiMoeEntry(ParsedItem):
+    """解析 萌番组 RSS 源模型"""
+
+    @root_validator(pre=True)
+    def pre_process(cls, values: Any) -> dict:
+        return MikanEntry.pre_process(values)
+
+
+class AcgRipEntry(ParsedItem):
+    """解析 ACG.RIP RSS 源模型"""
 
     @root_validator(pre=True)
     def pre_process(cls, values: Any) -> dict:
@@ -201,7 +239,7 @@ class DmhyEntry(ParsedItem):
 
 
 class NyaaEntry(ParsedItem):
-    """解析动漫花园 RSS 源模型"""
+    """解析 Nyaa RSS 源模型"""
 
     @root_validator(pre=True)
     def pre_process(cls, values: Any) -> dict:
@@ -247,6 +285,8 @@ class DefaultEntry(ParsedItem):
 ENTRY_PARSER_MAP = {
     "mikan": MikanEntry,
     "dmhy": DmhyEntry,
+    "bangumi_moe": BangumiMoeEntry,
+    "acg_rip": AcgRipEntry,
     "nyaa": NyaaEntry,
     "default": DefaultEntry,
 }

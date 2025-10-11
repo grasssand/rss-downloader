@@ -1,5 +1,6 @@
 import functools
 import os
+from collections.abc import Callable, Coroutine
 from pathlib import Path as SyncPath
 from typing import Any
 
@@ -14,7 +15,9 @@ from .models import (
     Downloader,
     FeedConfig,
     QBittorrentConfig,
+    TransmissionConfig,
     WebConfig,
+    WebhookConfig,
 )
 
 CONFIG_FILE = "config.yaml"
@@ -49,6 +52,8 @@ class ConfigManager:
         self._last_mtime = 0.0
         self._web_mode_enabled = False
         self.logger: LoggerProtocol = DummyLogger()
+
+        self._reconfig_callback: Callable[[], Coroutine[Any, Any, None]] | None = None
 
     @classmethod
     async def create(cls) -> "ConfigManager":
@@ -88,7 +93,7 @@ class ConfigManager:
             async with await config_path.open("r", encoding="utf-8") as f:
                 content = await f.read()
                 user_data = (
-                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}
+                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}  # type: ignore
                 )
 
         default_dump = Config.parse_obj({}).dict()
@@ -98,7 +103,7 @@ class ConfigManager:
         # 仅当文件不存在或内容不完整时才回写
         if not await config_path.exists() or user_data != merged_config:
             await config_path.parent.mkdir(parents=True, exist_ok=True)
-            dumped_yaml = await anyio.to_thread.run_sync(
+            dumped_yaml = await anyio.to_thread.run_sync(  # type: ignore
                 functools.partial(
                     yaml.safe_dump,
                     allow_unicode=True,
@@ -119,7 +124,7 @@ class ConfigManager:
             async with await self.config_path.open("r", encoding="utf-8") as f:
                 content = await f.read()
                 user_data = (
-                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}
+                    await anyio.to_thread.run_sync(yaml.safe_load, content) or {}  # type: ignore
                 )
 
         default_dump = Config.parse_obj({}).dict()
@@ -141,7 +146,7 @@ class ConfigManager:
             merged_for_validation = _deep_merge(backup_config_dump, new_data)
             try:
                 self._config = Config.parse_obj(merged_for_validation)
-                dumped_yaml = await anyio.to_thread.run_sync(
+                dumped_yaml = await anyio.to_thread.run_sync(  # type: ignore
                     functools.partial(
                         yaml.safe_dump,
                         allow_unicode=True,
@@ -157,7 +162,7 @@ class ConfigManager:
                 self._config = Config.parse_obj(backup_config_dump)
                 raise e
 
-    def initialize(self, tg: anyio.abc.TaskGroup, cli_force_web: bool = False):
+    def initialize(self, tg: anyio.abc.TaskGroup, cli_force_web: bool = False):  # type: ignore
         """根据命令行参数或配置文件启用配置热重载"""
         self._web_mode_enabled = cli_force_web or self._config.web.enabled
         if self._web_mode_enabled:
@@ -182,6 +187,14 @@ class ConfigManager:
     @property
     def qbittorrent(self) -> QBittorrentConfig | None:
         return self.get().qbittorrent
+
+    @property
+    def transmission(self) -> TransmissionConfig | None:
+        return self.get().transmission
+
+    @property
+    def webhooks(self) -> list[WebhookConfig]:
+        return self.get().webhooks
 
     @property
     def feeds(self) -> list[FeedConfig]:
@@ -213,6 +226,10 @@ class ConfigManager:
         """获取当前配置的版本号"""
         return self._config_version
 
+    def set_reconfig_callback(self, callback: Callable[[], Coroutine[Any, Any, None]]):
+        """注册一个在配置重载后调用的异步回调函数"""
+        self._reconfig_callback = callback
+
     async def _watch_for_changes(self):
         """启动后台线程监控文件变化"""
         self.logger.info(f"正在监控配置文件: {self.config_path}")
@@ -227,6 +244,11 @@ class ConfigManager:
                             self._config = await self._read_only_load()
                             self._last_mtime = mtime
                             self._config_version += 1
+
+                        if self._reconfig_callback:
+                            await self._reconfig_callback()
+
                         self.logger.info(f"配置文件已重新加载: {self.config_path}")
+
             except Exception:
                 self.logger.exception("配置文件监控任务出错")

@@ -194,15 +194,15 @@ class Database:
                 total_count_result = await cursor.fetchone()
                 total_count = total_count_result[0] if total_count_result else 0
 
-            self.logger.debug(
-                f"查询下载记录，SQL: {' '.join(query_parts)}, 参数: {params}"
-            )
-
             # 获取数据
             async with conn.cursor() as cursor:
-                query_parts.append("ORDER BY download_time DESC LIMIT ? OFFSET ?")
+                query_parts.append(
+                    "ORDER BY download_time DESC, feed_name, published_time DESC LIMIT ? OFFSET ?"
+                )
                 params.extend([limit, offset])
-                await cursor.execute(" ".join(query_parts), params)
+                sql = " ".join(query_parts)
+                self.logger.debug(f"查询下载记录SQL: {sql}, 参数: {params}")
+                await cursor.execute(sql, params)
                 rows = await cursor.fetchall()
                 results = [DownloadRecord.parse_obj(dict(row)) for row in rows]
 
