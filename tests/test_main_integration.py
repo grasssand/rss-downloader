@@ -78,6 +78,7 @@ async def test_rss_downloader_run_flow(
         parser=mock_parser,
         aria2=mock_aria2_client,
         qbittorrent=None,
+        transmission=None,
     )
 
     await downloader.run()
@@ -120,6 +121,7 @@ async def test_run_with_processing_error(
         parser=mock_parser,
         aria2=AsyncMock(),
         qbittorrent=None,
+        transmission=None,
     )
 
     # run() 不应因内部异常而崩溃
@@ -140,6 +142,7 @@ async def test_send_to_downloader_not_configured(
         parser=MagicMock(),
         aria2=None,
         qbittorrent=None,
+        transmission=None,
     )
     item_data = {
         "title": "Test",
@@ -155,6 +158,9 @@ async def test_send_to_downloader_not_configured(
 
     with pytest.raises(DownloaderError, match="下载器 qbittorrent 未配置或不可用"):
         await downloader._send_to_downloader(item_data, downloader_name="qbittorrent")
+
+    with pytest.raises(DownloaderError, match="下载器 transmission 未配置或不可用"):
+        await downloader._send_to_downloader(item_data, downloader_name="transmission")
 
 
 async def test_redownload_success(
@@ -184,6 +190,7 @@ async def test_redownload_success(
         parser=MagicMock(),
         aria2=AsyncMock(),
         qbittorrent=None,
+        transmission=None,
     )
     downloader._send_to_downloader = AsyncMock()
 
@@ -209,6 +216,7 @@ async def test_redownload_item_failure(
         parser=MagicMock(),
         aria2=AsyncMock(),
         qbittorrent=None,
+        transmission=None,
     )
 
     with pytest.raises(ItemNotFoundError):

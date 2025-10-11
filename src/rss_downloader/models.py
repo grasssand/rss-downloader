@@ -40,6 +40,12 @@ class QBittorrentConfig(BaseModel):
     password: str | None = None
 
 
+class TransmissionConfig(BaseModel):
+    host: HttpUrl | None = HttpUrl("http://localhost:9091")
+    username: str | None = None
+    password: str | None = None
+
+
 EXTRACTOR_DOMAIN_MAP = {
     "mikan": ("mikanime.tv", "mikanani.me"),
     "dmhy": ("dmhy.org",),
@@ -48,7 +54,7 @@ EXTRACTOR_DOMAIN_MAP = {
     "nyaa": ("nyaa.si",),
 }
 
-Downloader: TypeAlias = Literal["aria2", "qbittorrent"]
+Downloader: TypeAlias = Literal["aria2", "qbittorrent", "transmission"]
 
 
 class FeedConfig(BaseModel):
@@ -77,6 +83,7 @@ class Config(BaseModel):
     web: WebConfig = Field(default_factory=WebConfig)
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
+    transmission: TransmissionConfig | None = None
     feeds: list[FeedConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -89,6 +96,11 @@ class Config(BaseModel):
         if "qbittorrent" in used_downloaders and self.qbittorrent is None:
             raise ValueError(
                 "Feed 中指定了 qbittorrent 下载器, 但未提供 [qbittorrent] 配置"
+            )
+
+        if "transmission" in used_downloaders and self.transmission is None:
+            raise ValueError(
+                "Feed 中指定了 transmission 下载器, 但未提供 [transmission] 配置"
             )
 
         return self
@@ -107,12 +119,13 @@ class Config(BaseModel):
 
 
 class ConfigUpdatePayload(BaseModel):
-    """定义了允许通过 API 更新的配置字段"""
+    """允许通过 API 更新的配置字段"""
 
     log: LogConfig | None = None
     web: WebConfig | None = None
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
+    transmission: TransmissionConfig | None = None
     feeds: list[FeedConfig] | None = None
 
 

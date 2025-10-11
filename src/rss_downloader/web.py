@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, ValidationError, model_validator
 
-from .downloaders import Aria2Client, QBittorrentClient
+from .downloaders import Aria2Client, QBittorrentClient, TransmissionClient
 from .main import DownloaderError, ItemNotFoundError
 from .models import (
     Aria2Config,
@@ -15,6 +15,7 @@ from .models import (
     ConfigUpdatePayload,
     Downloader,
     QBittorrentConfig,
+    TransmissionConfig,
 )
 from .services import AppServices
 
@@ -147,7 +148,7 @@ async def redownload_item(
 ):
     """API: 重新下载一个任务"""
     try:
-        await services.downloader.redownload(
+        await services.rss_downloader.redownload(
             id=payload.id, downloader=payload.downloader
         )
         return {"status": "success", "message": "任务已成功发送到下载器"}
@@ -203,13 +204,13 @@ async def test_aria2_connection(
     try:
         client = await Aria2Client.create(
             logger=services.logger,
-            http_client=services.http_client,
             rpc_url=str(data.rpc),
             secret=data.secret,
         )
         result = await client.get_version()
         if "error" in result:
             raise ValueError(result["error"]["message"])
+        services.logger.success("测试 Aria2 连接成功")
         return {
             "status": "success",
             "version": result.get("result", {}).get("version", "未知"),
@@ -230,15 +231,37 @@ async def test_qbittorrent_connection(
     try:
         client = await QBittorrentClient.create(
             logger=services.logger,
-            http_client=services.http_client,
             host=str(data.host),
             username=data.username,
             password=data.password,
         )
         result = await client.get_version()
+        services.logger.success("测试 qBittorrent 连接成功")
         return {"status": "success", "version": result["version"]}
     except (ValidationError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         services.logger.error("测试 qBittorrent 连接失败")
+        raise HTTPException(status_code=500, detail=f"连接失败: {e}") from e
+
+
+@router.post("/test-downloader/transmission")
+async def test_transmission_connection(
+    data: TransmissionConfig,
+    services: Annotated[AppServices, Depends(get_services)],
+):
+    try:
+        client = await TransmissionClient.create(
+            logger=services.logger,
+            host=str(data.host),
+            username=data.username,
+            password=data.password,
+        )
+        result = await client.get_version()
+        services.logger.success("测试 Transmission 连接成功")
+        return {"status": "success", "version": result["version"]}
+    except (ValidationError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        services.logger.error("测试 Transmission 连接失败")
         raise HTTPException(status_code=500, detail=f"连接失败: {e}") from e

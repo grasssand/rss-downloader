@@ -13,6 +13,10 @@ qbittorrent:
   host: http://localhost:8080
   username: admin
   password: password
+transmission:
+  host: http://localhost:9091/
+  username: admin
+  password: password
 feeds:
 - name: Mikan
   url: https://mikanime.tv/RSS/MyBangumi

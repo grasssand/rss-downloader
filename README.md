@@ -1,7 +1,7 @@
 ## RSS Downloader
 ---
 
-一个 RSS 订阅下载工具，配合 Aria2 / qBittorrent 自动追番。
+一个 RSS 订阅下载工具，配合 Aria2 / qBittorrent / Transmission 自动追番。
 
 
 ### 1. 安装 🚀
@@ -53,6 +53,12 @@ qbittorrent:
   username: admin
   password: password
 
+# Transmission 配置 (如果不用可以留空或删除)
+transmission:
+  host: http://localhost:9091/
+  username: admin
+  password: password
+
 # RSS 源配置列表
 feeds:
   - name: Mikan
@@ -63,7 +69,7 @@ feeds:
     exclude:     # 排除规则
       - 720p
       - \d{2,}\s*[-|~]\s*\d{2,}
-    downloader: aria2 # or qbittorrent
+    downloader: aria2 # or qbittorrent / transmission
 
   - name: Nyaa
     url: https://nyaa.si/?page=rss&q=

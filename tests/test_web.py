@@ -140,7 +140,7 @@ async def test_update_config_api_validation_error(
 
 async def test_redownload_api_success(client: AsyncClient, mock_services: AppServices):
     """测试 POST /redownload API 成功时的情况"""
-    mock_services.downloader.redownload.return_value = None
+    mock_services.rss_downloader.redownload.return_value = None
 
     payload = {"id": 1, "downloader": "aria2"}
     response = await client.post("/redownload", json=payload)
@@ -149,7 +149,7 @@ async def test_redownload_api_success(client: AsyncClient, mock_services: AppSer
     assert response.json()["status"] == "success"
 
     # 验证 downloader.redownload 方法被以正确的参数调用
-    mock_services.downloader.redownload.assert_awaited_once_with(
+    mock_services.rss_downloader.redownload.assert_awaited_once_with(
         id=1, downloader="aria2"
     )
 
@@ -157,26 +157,30 @@ async def test_redownload_api_success(client: AsyncClient, mock_services: AppSer
 async def test_redownload_api_error(client: AsyncClient, mock_services: AppServices):
     """测试 redownload API 的错误"""
     # 场景1: 抛出 ItemNotFoundError
-    mock_services.downloader.redownload.side_effect = ItemNotFoundError("未找到记录")
+    mock_services.rss_downloader.redownload.side_effect = ItemNotFoundError(
+        "未找到记录"
+    )
     payload = {"id": 999, "downloader": "aria2"}
     response = await client.post("/redownload", json=payload)
     assert response.status_code == 404
     assert "未找到记录" in response.json()["detail"]
 
     # 场景2: 抛出 ValueError
-    mock_services.downloader.redownload.side_effect = ValueError("No download URL")
+    mock_services.rss_downloader.redownload.side_effect = ValueError("No download URL")
     response = await client.post("/redownload", json={"id": 1, "downloader": "aria2"})
     assert response.status_code == 400
     assert "No download URL" in response.json()["detail"]
 
     # 场景3: 抛出 DownloaderError
-    mock_services.downloader.redownload.side_effect = DownloaderError("Aria2 failed")
+    mock_services.rss_downloader.redownload.side_effect = DownloaderError(
+        "Aria2 failed"
+    )
     response = await client.post("/redownload", json={"id": 1, "downloader": "aria2"})
     assert response.status_code == 500
     assert "Aria2 failed" in response.json()["detail"]
 
     # 场景4: 抛出通用 Exception
-    mock_services.downloader.redownload.side_effect = Exception("Generic error")
+    mock_services.rss_downloader.redownload.side_effect = Exception("Generic error")
     response = await client.post("/redownload", json={"id": 1, "downloader": "aria2"})
     assert response.status_code == 500
     assert "未知服务器错误" in response.json()["detail"]
@@ -261,6 +265,43 @@ async def test_test_downloader_connection_routes(
         response = await client.post(
             "/test-downloader/qbittorrent",
             json={"host": "http://fake-qb", "username": "test", "password": ""},
+        )
+        assert response.status_code == 500
+        assert "Auth failed" in response.json()["detail"]
+
+    # --- 测试 Transmission ---
+    # 场景1: 连接成功
+    mock_tr_instance = AsyncMock()
+    mock_tr_instance.get_version = AsyncMock(return_value={"version": "4.0.0"})
+    with patch(
+        "rss_downloader.web.TransmissionClient.create",
+        new=AsyncMock(return_value=mock_tr_instance),
+    ):
+        response = await client.post(
+            "/test-downloader/transmission", json={"host": "http://fake-tr"}
+        )
+        assert response.status_code == 200
+        assert response.json()["version"] == "4.0.0"
+
+    # 场景2: 连接失败
+    with patch(
+        "rss_downloader.web.TransmissionClient.create",
+        new=AsyncMock(side_effect=ConnectionError("Failed")),
+    ):
+        response = await client.post(
+            "/test-downloader/transmission", json={"host": "http://fake-tr"}
+        )
+        assert response.status_code == 500
+        assert "连接失败" in response.json()["detail"]
+
+    # 场景3: API 返回错误信息
+    with patch(
+        "rss_downloader.web.TransmissionClient.create",
+        new=AsyncMock(side_effect=ConnectionError("Auth failed")),
+    ):
+        response = await client.post(
+            "/test-downloader/transmission",
+            json={"host": "http://fake-tr", "username": "test", "password": ""},
         )
         assert response.status_code == 500
         assert "Auth failed" in response.json()["detail"]

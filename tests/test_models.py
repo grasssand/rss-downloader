@@ -60,13 +60,26 @@ def test_downloader_config_exists_validator():
     feeds_qb = [
         FeedConfig(name="Feed B", url=HttpUrl("http://b.com"), downloader="qbittorrent")
     ]
-    config_data_qb = {"feeds": feeds_qb, "qbittorrent": None}  # qb 配置为 None
-
+    config_data_qb = {"feeds": feeds_qb, "qbittorrent": None}
     with pytest.raises(
         ValidationError,
         match="Feed 中指定了 qbittorrent 下载器, 但未提供 \\[qbittorrent\\] 配置",
     ):
         Config.model_validate(config_data_qb)
+
+    # 场景3: 使用了 transmission，但没有提供 transmission 配置
+    feeds_tr = [
+        FeedConfig(
+            name="Feed C", url=HttpUrl("http://c.com"), downloader="transmission"
+        )
+    ]
+    config_data_tr = {"feeds": feeds_tr, "transmission": None}
+
+    with pytest.raises(
+        ValidationError,
+        match="Feed 中指定了 transmission 下载器, 但未提供 \\[transmission\\] 配置",
+    ):
+        Config.model_validate(config_data_tr)
 
     # 正常情况: 配置存在
     config_data_ok = {

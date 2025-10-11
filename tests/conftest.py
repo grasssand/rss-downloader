@@ -91,7 +91,7 @@ def mock_services(mock_logger: LoggerProtocol) -> AppServices:
     services.db = MagicMock(
         spec=Database, search_downloads=AsyncMock(return_value=([], 0))
     )
-    services.downloader = MagicMock(spec=RSSDownloader, redownload=AsyncMock())
+    services.rss_downloader = MagicMock(spec=RSSDownloader, redownload=AsyncMock())
     services.logger = mock_logger
     services.http_client = MagicMock(spec=AsyncClient, aclose=AsyncMock())
 
