@@ -107,6 +107,7 @@ async def test_app_services_close(mock_logger: LoggerProtocol):
         aria2=mock_aria2,
         qbittorrent=mock_qb,
         transmission=mock_trans,
+        webhook_service=MagicMock(),
         http_client=mock_http_client,
     )
 

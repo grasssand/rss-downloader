@@ -79,6 +79,7 @@ async def test_rss_downloader_run_flow(
         aria2=mock_aria2_client,
         qbittorrent=None,
         transmission=None,
+        webhook_service=MagicMock(),
     )
 
     await downloader.run()
@@ -122,6 +123,7 @@ async def test_run_with_processing_error(
         aria2=AsyncMock(),
         qbittorrent=None,
         transmission=None,
+        webhook_service=MagicMock(),
     )
 
     # run() 不应因内部异常而崩溃
@@ -143,6 +145,7 @@ async def test_send_to_downloader_not_configured(
         aria2=None,
         qbittorrent=None,
         transmission=None,
+        webhook_service=AsyncMock(),
     )
     item_data = {
         "title": "Test",
@@ -191,6 +194,7 @@ async def test_redownload_success(
         aria2=AsyncMock(),
         qbittorrent=None,
         transmission=None,
+        webhook_service=MagicMock(),
     )
     downloader._send_to_downloader = AsyncMock()
 
@@ -217,6 +221,7 @@ async def test_redownload_item_failure(
         aria2=AsyncMock(),
         qbittorrent=None,
         transmission=None,
+        webhook_service=MagicMock(),
     )
 
     with pytest.raises(ItemNotFoundError):

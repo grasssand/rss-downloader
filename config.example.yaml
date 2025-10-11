@@ -17,6 +17,10 @@ transmission:
   host: http://localhost:9091/
   username: admin
   password: password
+webhooks:
+  - name: Discord
+    url: https://discord.com/api/webhooks/xxx
+    enabled: true
 feeds:
 - name: Mikan
   url: https://mikanime.tv/RSS/MyBangumi

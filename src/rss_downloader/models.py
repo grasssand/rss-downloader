@@ -46,6 +46,12 @@ class TransmissionConfig(BaseModel):
     password: str | None = None
 
 
+class WebhookConfig(BaseModel):
+    name: str
+    url: HttpUrl
+    enabled: bool = True
+
+
 EXTRACTOR_DOMAIN_MAP = {
     "mikan": ("mikanime.tv", "mikanani.me"),
     "dmhy": ("dmhy.org",),
@@ -84,6 +90,7 @@ class Config(BaseModel):
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
     transmission: TransmissionConfig | None = None
+    webhooks: list[WebhookConfig] = Field(default_factory=list)
     feeds: list[FeedConfig] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -126,6 +133,7 @@ class ConfigUpdatePayload(BaseModel):
     aria2: Aria2Config | None = None
     qbittorrent: QBittorrentConfig | None = None
     transmission: TransmissionConfig | None = None
+    webhooks: list[WebhookConfig] | None = None
     feeds: list[FeedConfig] | None = None
 
 

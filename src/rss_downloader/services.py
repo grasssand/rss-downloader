@@ -7,6 +7,7 @@ from .downloaders import Aria2Client, QBittorrentClient, TransmissionClient
 from .logger import LoggerProtocol, setup_logger
 from .main import RSSDownloader
 from .parser import RSSParser
+from .webhook import WebhookService
 
 
 class AppServices:
@@ -21,6 +22,7 @@ class AppServices:
         aria2: Aria2Client | None,
         qbittorrent: QBittorrentClient | None,
         transmission: TransmissionClient | None,
+        webhook_service: WebhookService,
         http_client: httpx.AsyncClient,
     ):
         self.config = config
@@ -30,6 +32,7 @@ class AppServices:
         self.aria2 = aria2
         self.qbittorrent = qbittorrent
         self.transmission = transmission
+        self.webhook_service = webhook_service
         self._http_client = http_client
 
         self.download_clients = [
@@ -53,15 +56,23 @@ class AppServices:
         http_client = httpx.AsyncClient()
         parser = RSSParser(config=config, logger=logger, http_client=http_client)
 
+        # 初始化 Webhook 服务
+        webhook_service = WebhookService(
+            config=config, logger=logger, http_client=http_client
+        )
+
         # 创建 AppServices 实例
         instance = cls(
             config=config,
             logger=logger,
             db=db,
-            rss_downloader=RSSDownloader(config, db, logger, parser, None, None, None),
+            rss_downloader=RSSDownloader(
+                config, db, logger, parser, None, None, None, webhook_service
+            ),
             aria2=None,
             qbittorrent=None,
             transmission=None,
+            webhook_service=webhook_service,
             http_client=http_client,
         )
 
@@ -141,6 +152,7 @@ class AppServices:
             aria2=self.aria2,
             qbittorrent=self.qbittorrent,
             transmission=self.transmission,
+            webhook_service=self.webhook_service,
         )
 
     async def close(self):

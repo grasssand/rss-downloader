@@ -17,6 +17,7 @@ from .models import (
     QBittorrentConfig,
     TransmissionConfig,
     WebConfig,
+    WebhookConfig,
 )
 
 CONFIG_FILE = "config.yaml"
@@ -183,6 +184,10 @@ class ConfigManager:
     @property
     def transmission(self) -> TransmissionConfig | None:
         return self.get().transmission
+
+    @property
+    def webhooks(self) -> list[WebhookConfig]:
+        return self.get().webhooks
 
     @property
     def feeds(self) -> list[FeedConfig]:

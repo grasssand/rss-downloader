@@ -10,6 +10,7 @@ from .downloaders import Aria2Client, QBittorrentClient, TransmissionClient
 from .logger import LoggerProtocol
 from .models import Downloader, DownloadRecord
 from .parser import RSSParser
+from .webhook import WebhookService
 
 
 class DownloaderError(Exception):
@@ -30,6 +31,7 @@ class RSSDownloader:
         aria2: Aria2Client | None,
         qbittorrent: QBittorrentClient | None,
         transmission: TransmissionClient | None,
+        webhook_service: WebhookService,
     ):
         self.config = config
         self.db = database
@@ -38,6 +40,7 @@ class RSSDownloader:
         self.aria2 = aria2
         self.qbittorrent = qbittorrent
         self.transmission = transmission
+        self.webhook_service = webhook_service
 
     async def _send_to_downloader(
         self,
@@ -102,6 +105,8 @@ class RSSDownloader:
             mode=mode,
         )
         new_id = await self.db.insert(record)
+
+        await self.webhook_service.send(record)
 
         if status:
             self.logger.info(

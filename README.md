@@ -59,6 +59,12 @@ transmission:
   username: admin
   password: password
 
+# Webhook 配置 (如果不用可以留空或删除)
+webhooks:
+  - name: Discord
+    url: https://discord.com/api/webhooks/xxx
+    enabled: true
+
 # RSS 源配置列表
 feeds:
   - name: Mikan
